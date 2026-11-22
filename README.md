@@ -102,6 +102,29 @@ Press Enter in the terminal to close the dashboard. The guide to every option is
 - **Live dashboard**: the router organ by organ, a magnifier on the route being probed, a monitor of the requests and of the state, and a final diagnosis that splits the leaks between your code and your dependencies.
 - **Upstream search**: for a leak in a dependency, it compares the file between the installed version, the latest release and the development branch, and lists the related issues. Only package and class names leave the machine.
 
+## How it uses Symfony AI and MCP
+
+The model only proposes changes. MCP gives the doctor what to fix, and Igor and the probe check every answer.
+
+```mermaid
+flowchart LR
+    Igor["Igor MCP server<br/>(igor mcp --read-only)"] -- "audit_project, get_rule,<br/>explain_service" --> Client["symfony/mcp-bundle<br/>client"]
+    Probe["Runtime probe<br/>(igor:worker-scan)"] --> Loop
+    Client --> Loop["DoctorLoop"]
+    Loop -- "one finding + briefing" --> Agent["symfony/ai-agent<br/>on Claude Code platform"]
+    Agent -- "JSON patch" --> Checks["PatchPolicy, php -l,<br/>Igor + probe re-check"]
+    Checks -- "keep or roll back" --> Loop
+```
+
+| Piece | Package (pinned, `0.15.0`) | Where |
+|---|---|---|
+| **MCP client** for Igor's server over stdio | `symfony/mcp-bundle` | `config/packages/mcp.yaml` declares the `igor_doctor` client. `AuditRunner` pages through `audit_project`, and `IgorReference` calls `get_rule` and `explain_service`. |
+| **Agent** that writes the patch | `symfony/ai-agent`, `symfony/ai-platform` | `DoctorAgent` sends a system prompt and one finding as a `MessageBag`. It gets back a JSON object with search/replace edits, or `behaviour_changing: true`. |
+| **Platform**: the local Claude Code CLI, no API key | `symfony/ai-claude-code-platform` | `DoctorAgentFactory` checks the model against the bridge's `ModelCatalog` and runs the CLI in an empty sandbox directory. |
+| **Unblock with AI** for the runtime probe | the same agent | The probe calls `bin/ask` (`doctor:ask`), so the scanned app gets no AI library. |
+
+The model gets no tools. The agent's options disable every built-in tool and MCP server, user settings and hooks, slash commands, and session persistence. Everything it knows comes in the request, and everything it can do is the JSON answer. `PatchPolicy` checks that answer in code before anything is written.
+
 ## Status: proof of concept
 
 This was built for the hackathon, on top of [igor-php](https://github.com/igor-php/igor-php), the static linter, which is released.
