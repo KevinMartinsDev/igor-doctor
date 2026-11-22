@@ -70,10 +70,12 @@ vendor/bin/phpunit
 **2. Fix the bundled lab** (a Symfony app with one leak of each kind): Igor and the probe find the leaks, the agent patches them, and a patch is kept only when both stop reporting its leak.
 
 ```bash
-bin/demo --runtime --max-iterations=1
+bin/demo --runtime --allow-behaviour-change
 ```
 
-**3. Reproduce the video on symfony/demo, Symfony 7.4.**
+The lab includes an `exit()` and a `__destruct()`, whose only fixes change what the code does. Without `--allow-behaviour-change` the doctor flags them instead of patching them, and the run exits with `1`.
+
+**3. Reproduce the video on symfony/demo v2.9.0 (Symfony 7.4).** Use this tag: the validator leak shown in the video was fixed in Symfony 8.1.
 
 ```bash
 git clone --branch v2.9.0 https://github.com/symfony/demo.git ../symfony-demo && cd ../symfony-demo
@@ -131,16 +133,16 @@ The sensors are deterministic, the patch comes from the model, and the validatio
 
 ```bash
 composer install
-cp .env .env.local   # then set DOCTOR_AI_MODEL in .env.local
+echo "DOCTOR_AI_MODEL=opus" > .env.local
 ```
 
-`DOCTOR_AI_MODEL` takes one of the models of the Claude Code bridge's catalog: when it is missing or unknown, the command lists the accepted values. Set `DOCTOR_CLAUDE_BIN` when `claude` is not on the `PATH`. `DOCTOR_AGENT_TIMEOUT` caps one answer in seconds (default 600): a finding that times out gets no patch and the run goes on. `.env.local` is not committed.
+`DOCTOR_AI_MODEL` (in `.env.local`, which is not committed) takes one of the models of the Claude Code bridge's catalog: when it is missing or unknown, the command lists the accepted values. Set `DOCTOR_CLAUDE_BIN` when `claude` is not on the `PATH`. `DOCTOR_AGENT_TIMEOUT` caps one answer in seconds (default 600): a finding that times out gets no patch and the run goes on.
 
 To try it on the bundled sample project:
 
 ```bash
 composer install --working-dir=examples/demo-leak
-bin/demo                      # mise run doctor adds --allow-behaviour-change
+bin/demo --allow-behaviour-change    # or: mise run doctor
 ```
 
 `bin/demo` copies `examples/demo-leak` to `var/demo-leak` (gitignored) and runs the doctor on the copy, so every run starts from the same leaks and the versioned lab never changes. At the end it prints what the doctor changed (a summary, then the diff) and saves it as `var/demo-leak.diff`; the patched files stay in `var/demo-leak/src` until the next run. Extra arguments go to the command (`bin/demo --max-iterations=1`).
@@ -148,10 +150,10 @@ bin/demo                      # mise run doctor adds --allow-behaviour-change
 ### On the official Symfony demo
 
 ```bash
-bin/demo-symfony              # or: mise run doctor-symfony
+bin/demo-symfony --allow-behaviour-change    # or: mise run doctor-symfony
 ```
 
-`bin/demo-symfony` caches a clone of [symfony/demo](https://github.com/symfony/demo) in `var/symfony-demo-src` (tag `v3.1.0`; set `SYMFONY_DEMO_REF` for another), copies it to `var/symfony-demo`, installs its dependencies plus Igor, adds the same `igor.json` as the lab, and runs the doctor on the copy. It also registers `IgorPhpBundle` in the copy's `config/bundles.php`, which Igor needs to read the container. On `v3.1.0` Igor reports 4 blocking findings in `src/Twig/` and `src/EventSubscriber/`, which the doctor brings to 0 (the agent's output varies between runs, and a patch that does not parse is rolled back). `config/packages/` is never patched, so a finding that needs service configuration is reported as not applied.
+`bin/demo-symfony` caches a clone of [symfony/demo](https://github.com/symfony/demo) in `var/symfony-demo-src` (tag `v3.1.0`; set `SYMFONY_DEMO_REF` for another), copies it to `var/symfony-demo`, installs its dependencies plus Igor, adds the same `igor.json` as the lab, and runs the doctor on the copy. It also registers `IgorPhpBundle` in the copy's `config/bundles.php`, which Igor needs to read the container. On `v3.1.0` Igor reports 4 blocking findings in `src/Twig/` and `src/EventSubscriber/`, which the doctor brings to 0 (the agent's output varies between runs, and a patch that does not parse is rolled back). `config/packages/` is never patched, so a finding that needs service configuration is reported as not applied. This tag is not the one in the video: the runtime scan in "Try it" needs `v2.9.0` (Symfony 7.4), where the validator leak is still present.
 
 The leaks in `examples/demo-leak` are deliberate. `composer install` points Git at the versioned hooks in `.githooks/` (`git config core.hooksPath .githooks`), and the `pre-commit` hook refuses a commit that stages changes under `examples/demo-leak/src` or `examples/demo-leak/config`. To change the lab on purpose, run `ALLOW_DEMO_CHANGES=1 git commit …`. Like any Git hook it is local: `--no-verify` skips it.
 
