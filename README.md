@@ -7,9 +7,64 @@
 - **A Symfony AI agent** writes the fixes, and the probe and Igor check every patch before it is kept. The same agent unblocks the routes the probe could not test: it writes a request recipe, and the probe replays it in a rolled-back transaction.
 - **A live dashboard** shows the router being explored, the coverage of each route, and a final diagnosis that searches upstream for a fix when the leak is in a dependency.
 
-[**Watch the 90-second demo**](docs/demo.webm): symfony/demo on Symfony 7.4. The AI unblocks the post creation form, then the diagnosis finds that Symfony's validators keep the last submitted form and its author between requests, and points to the upstream fix in Symfony 8.1 ([symfony/symfony#63945](https://github.com/symfony/symfony/pull/63945)).
+[**Watch the 90-second demo**](https://www.youtube.com/watch?v=RzlAw62gMIU) ([file](docs/demo.webm)): symfony/demo on Symfony 7.4. The AI unblocks the post creation form, then the diagnosis finds that Symfony's validators keep the last submitted form and its author between requests, and points to the upstream fix in Symfony 8.1 ([symfony/symfony#63945](https://github.com/symfony/symfony/pull/63945)).
 
-To reproduce it, see [Runtime probe](#runtime-probe) and [`runtime/README.md`](runtime/README.md).
+## Try it
+
+You need PHP 8.2+, Composer, and the [Claude Code](https://code.claude.com) CLI logged in (`claude /login`): the Symfony AI agent runs on it through `symfony/ai-claude-code-platform`, with no API key. Everything runs locally, and the probe sends every request in a database transaction that is rolled back.
+
+**1. Install the doctor and run its tests.**
+
+```bash
+git clone https://github.com/KevinMartinsDev/igor-doctor.git && cd igor-doctor
+composer install
+composer install --working-dir=examples/demo-leak
+echo "DOCTOR_AI_MODEL=opus" > .env.local
+vendor/bin/phpunit
+```
+
+**2. Fix the bundled lab** (a Symfony app with one leak of each kind): Igor and the probe find the leaks, the agent patches them, and a patch is kept only when both stop reporting its leak.
+
+```bash
+bin/demo --runtime --max-iterations=1
+```
+
+**3. Reproduce the video on symfony/demo, Symfony 7.4.**
+
+```bash
+git clone --branch v2.9.0 https://github.com/symfony/demo.git ../symfony-demo && cd ../symfony-demo
+composer install
+../igor-doctor/bin/install-runtime .
+export IGOR_AI_COMMAND="$PWD/../igor-doctor/bin/ask"
+APP_ENV=prod APP_DEBUG=0 php bin/console igor:worker-scan --user=jane_admin --user=tom_admin --forms --tour --include-vendors --dashboard
+```
+
+Open http://127.0.0.1:8765 and watch the probe explore the router. When the scan is done:
+
+- click the `/{_locale}/admin/post/new` route (partly tested), then **Unblock with AI**: the model writes a request recipe and the probe replays it, up to three times;
+- open **Diagnosis**: under `symfony/validator`, click **Search where it is kept: ConstraintValidator::$context**. The file changed in 8.1, and PR #63945 comes first.
+
+Press Enter in the terminal to close the dashboard. The guide to every option is [`runtime/README.md`](runtime/README.md).
+
+## What it does
+
+- **Static findings over MCP**: the doctor starts Igor's MCP server (`igor mcp --read-only`) with a Symfony MCP client (`symfony/mcp-bundle`) and reads the findings, the rules and the shared services.
+- **Fixes by a Symfony AI agent** (`symfony/ai-agent` on `symfony/ai-platform`): one finding at a time, with the numbered file and a briefing on the rule. The model has no tools, so it can only answer with a patch. The patch is linted, applied, and kept only when Igor and the probe stop reporting the finding and report nothing new; otherwise it is rolled back.
+- **Runtime probe** (`igor:worker-scan`): reads the router, builds a request for every route, logs users in (A, B, A, then anonymous), submits the forms with a fresh CSRF token, and compares the state the container keeps after each request. It sorts each leak by impact: **exposure** (another request reads it), **retention** (kept in memory), **growth**, **crash**.
+- **Coverage**: each route is tested, partly tested or not tested, with the reason (a missing role, missing data, a refused form).
+- **Unblock with AI**: for a route the probe could not test, the agent writes a request recipe from the route, its controller, its entities and the answers the scan got. The probe replays it, rolled back, up to three times, and saves a recipe that works for the next scans.
+- **Live dashboard**: the router organ by organ, a magnifier on the route being probed, a monitor of the requests and of the state, and a final diagnosis that splits the leaks between your code and your dependencies.
+- **Upstream search**: for a leak in a dependency, it compares the file between the installed version, the latest release and the development branch, and lists the related issues. Only package and class names leave the machine.
+
+## Status: proof of concept
+
+This was built for the hackathon, on top of [igor-php](https://github.com/igor-php/igor-php), the static linter, which is released.
+
+- **Solid**: the detection. It is deterministic (no model is involved in finding a leak) and covered by tests (175). It found the stateful validators of Symfony 7.4 and an API Platform leak that has since been published as an advisory (GHSA-xmq6-3c6q-fr8m).
+- **Experimental**: the dashboard and the AI unblock. The model does not always find the recipe in three attempts: on the symfony/demo post form, it succeeds about one time in two with `opus`.
+- **Not done yet**: API routes that need a token, DELETE and PATCH routes without a form, and a value one route leaves for another route (the probe replays the same route).
+- **A retention is not an exposure**: a value kept in memory is a memory and privacy concern; it becomes a leak between users only when another request reads it. The report says which one it found.
+
 
 ---
 
