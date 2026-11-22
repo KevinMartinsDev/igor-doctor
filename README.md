@@ -26,10 +26,12 @@ vendor/bin/phpunit
 **2. Fix the bundled lab** (a Symfony app with one leak of each kind): Igor and the probe find the leaks, the agent patches them, and a patch is kept only when both stop reporting its leak.
 
 ```bash
-bin/demo --runtime --max-iterations=1
+bin/demo --allow-behaviour-change
 ```
 
-**3. Reproduce the video on symfony/demo, Symfony 7.4.**
+It runs on a fresh copy in `var/demo-leak`, goes from red to green (0 blocking findings) and prints what changed. Without `--allow-behaviour-change` the doctor leaves the fixes that change what the code does (removing `exit()`, a destructor…) as findings, so some stay red. Add `--runtime` to also run the probe on the copy.
+
+**3. Reproduce the video on symfony/demo v2.9.0, Symfony 7.4** (the validator leak it shows is fixed in Symfony 8.1, so this step pins the older tag; `bin/demo-symfony` below uses v3.1.0 for the doctor instead).
 
 ```bash
 git clone --branch v2.9.0 https://github.com/symfony/demo.git ../symfony-demo && cd ../symfony-demo
@@ -87,7 +89,7 @@ The sensors are deterministic, the patch comes from the model, and the validatio
 
 ```bash
 composer install
-cp .env .env.local   # then set DOCTOR_AI_MODEL in .env.local
+echo "DOCTOR_AI_MODEL=opus" > .env.local   # any model of the catalog; .env holds the empty default
 ```
 
 `DOCTOR_AI_MODEL` takes one of the models of the Claude Code bridge's catalog: when it is missing or unknown, the command lists the accepted values. Set `DOCTOR_CLAUDE_BIN` when `claude` is not on the `PATH`. `DOCTOR_AGENT_TIMEOUT` caps one answer in seconds (default 600): a finding that times out gets no patch and the run goes on. `.env.local` is not committed.
@@ -96,7 +98,7 @@ To try it on the bundled sample project:
 
 ```bash
 composer install --working-dir=examples/demo-leak
-bin/demo                      # mise run doctor adds --allow-behaviour-change
+bin/demo --allow-behaviour-change   # without the flag, behaviour-changing fixes stay as findings
 ```
 
 `bin/demo` copies `examples/demo-leak` to `var/demo-leak` (gitignored) and runs the doctor on the copy, so every run starts from the same leaks and the versioned lab never changes. At the end it prints what the doctor changed (a summary, then the diff) and saves it as `var/demo-leak.diff`; the patched files stay in `var/demo-leak/src` until the next run. Extra arguments go to the command (`bin/demo --max-iterations=1`).
