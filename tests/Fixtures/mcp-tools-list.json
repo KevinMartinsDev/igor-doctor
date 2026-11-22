@@ -1,0 +1,606 @@
+{
+  "ttlMs": 0,
+  "cacheScope": "public",
+  "tools": [
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Audit file"
+      },
+      "description": "Audits one PHP file of the project with the project context (shared or transient service, resets). Pass content to audit an unsaved version of the file, e.g. to check a fix before writing it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the PHP file, absolute or relative to the project root"
+          },
+          "content": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "description": "unsaved content of the file to audit instead of the file on disk"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "name": "audit_file",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "audited": {
+            "type": "boolean",
+            "description": "false when igor skips the file: excluded, transient service, or not a shared service"
+          },
+          "shared": {
+            "type": "boolean"
+          },
+          "findings": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "rule_id": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string",
+                  "description": "ERROR or WARNING"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "class": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "remediation": {
+                  "type": "string"
+                },
+                "reachability": {
+                  "type": "string",
+                  "description": "HIGH when application code calls it, INFO otherwise"
+                },
+                "out_of_request": {
+                  "type": "string",
+                  "description": "why this code never runs during a request (console, profiler, kernel boot...)"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "rule_id",
+                "severity",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "file",
+          "audited",
+          "findings"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Audit project"
+      },
+      "description": "Audits the whole project for state that leaks between requests in a FrankenPHP worker. Findings are sorted by severity and reachability, and paginated (offset, limit). Findings in code that never runs during a request (console, profiler, kernel boot) are hidden unless include_out_of_request is set.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "description": "only return findings of this severity: ERROR or WARNING"
+          },
+          "rule_id": {
+            "type": "string",
+            "description": "only return findings of this rule"
+          },
+          "path": {
+            "type": "string",
+            "description": "only return findings of files under this path, relative to the project root"
+          },
+          "include_out_of_request": {
+            "type": "boolean",
+            "description": "also return findings in code that never runs during a request"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "index of the first finding to return"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "maximum number of findings to return (default 50, at most 200)"
+          }
+        },
+        "additionalProperties": false
+      },
+      "name": "audit_project",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "files_audited": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer",
+            "description": "findings matching the filters"
+          },
+          "errors": {
+            "type": "integer"
+          },
+          "warnings": {
+            "type": "integer"
+          },
+          "hidden_out_of_request": {
+            "type": "integer",
+            "description": "findings hidden because their code never runs during a request"
+          },
+          "files_failed": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "files igor could not read or parse: they are not checked"
+          },
+          "findings": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "rule_id": {
+                  "type": "string"
+                },
+                "severity": {
+                  "type": "string",
+                  "description": "ERROR or WARNING"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "class": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "remediation": {
+                  "type": "string"
+                },
+                "reachability": {
+                  "type": "string",
+                  "description": "HIGH when application code calls it, INFO otherwise"
+                },
+                "out_of_request": {
+                  "type": "string",
+                  "description": "why this code never runs during a request (console, profiler, kernel boot...)"
+                }
+              },
+              "required": [
+                "file",
+                "line",
+                "rule_id",
+                "severity",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next_offset": {
+            "type": "integer",
+            "description": "offset of the next page; absent on the last page"
+          },
+          "degraded": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "files_audited",
+          "total",
+          "errors",
+          "warnings",
+          "findings"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Check baseline"
+      },
+      "description": "Checks the baseline of the project (igor-baseline.json): lists its entries that igor no longer detects, which baseline_prune removes.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "name": "baseline_check",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "baseline": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "integer"
+          },
+          "clean": {
+            "type": "boolean",
+            "description": "every entry still matches a finding"
+          },
+          "stale": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            },
+            "description": "entries igor no longer detects"
+          }
+        },
+        "required": [
+          "baseline",
+          "exists",
+          "entries",
+          "clean",
+          "stale"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Explain service"
+      },
+      "description": "Explains how igor sees the services matching a name (class, service id or file path): shared or not, dependencies, verdict and findings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "class name, service id or file path, or a part of it (case-insensitive)"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "name": "explain_service",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "framework": {
+            "type": "string"
+          },
+          "matches": {
+            "type": "integer"
+          },
+          "services": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "service_id": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "shared": {
+                  "type": "boolean"
+                },
+                "public": {
+                  "type": "boolean"
+                },
+                "verdict": {
+                  "type": "string",
+                  "description": "OK when igor finds no state leak, KO when it finds one, ERROR when the file cannot be read or parsed, SKIPPED when igor does not audit the service"
+                },
+                "skipped": {
+                  "type": "string",
+                  "description": "why igor does not audit the service"
+                },
+                "dependencies": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "out_of_request": {
+                  "type": "string"
+                },
+                "findings": {
+                  "type": [
+                    "null",
+                    "array"
+                  ],
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer"
+                      },
+                      "rule_id": {
+                        "type": "string"
+                      },
+                      "severity": {
+                        "type": "string",
+                        "description": "ERROR or WARNING"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "class": {
+                        "type": "string"
+                      },
+                      "method": {
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string"
+                      },
+                      "remediation": {
+                        "type": "string"
+                      },
+                      "reachability": {
+                        "type": "string",
+                        "description": "HIGH when application code calls it, INFO otherwise"
+                      },
+                      "out_of_request": {
+                        "type": "string",
+                        "description": "why this code never runs during a request (console, profiler, kernel boot...)"
+                      }
+                    },
+                    "required": [
+                      "file",
+                      "line",
+                      "rule_id",
+                      "severity",
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "shared",
+                "verdict",
+                "findings"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "framework",
+          "matches",
+          "services"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "Get rule"
+      },
+      "description": "Reference of a rule (the rule_id of a finding): why it leaks in worker mode, the Symfony and Laravel fix, and its known false positives. Without rule_id, lists the rules.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "description": "the rule_id of a finding; omit it to list the rules"
+          }
+        },
+        "additionalProperties": false
+      },
+      "name": "get_rule",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string"
+          },
+          "doc": {
+            "type": "string",
+            "description": "the reference of the rule, in Markdown"
+          },
+          "rules": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true,
+        "title": "Project info"
+      },
+      "description": "Framework of the project (Symfony, Laravel, Octane), whether the Deep Audit of its container runs, and the igor version: whether it is the latest release on Packagist and the command to propose to update it. Call it first. refresh reloads the container after a change of the service configuration.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "refresh": {
+            "type": "boolean",
+            "description": "reload the container dump and the Symfony or Laravel service map"
+          }
+        },
+        "additionalProperties": false
+      },
+      "name": "project_info",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "framework": {
+            "type": "string",
+            "description": "Symfony, Laravel or none"
+          },
+          "octane": {
+            "type": "boolean",
+            "description": "laravel/octane is required by the project"
+          },
+          "deep_audit": {
+            "type": "boolean",
+            "description": "the service container of the framework is read: only shared services are audited"
+          },
+          "degraded": {
+            "type": "string",
+            "description": "why the Deep Audit of the framework fell back to a directory scan"
+          },
+          "services": {
+            "type": "integer",
+            "description": "number of services in the container"
+          },
+          "container_dump": {
+            "type": "string"
+          },
+          "baseline": {
+            "type": "string"
+          },
+          "igor": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "string",
+                "description": "version of the running igor binary"
+              },
+              "latest": {
+                "type": "string",
+                "description": "latest stable release on Packagist"
+              },
+              "up_to_date": {
+                "type": [
+                  "null",
+                  "boolean"
+                ],
+                "description": "whether the running igor is the latest release; absent when unknown"
+              },
+              "install": {
+                "type": "string",
+                "description": "how igor is installed in this project: composer or binary"
+              },
+              "constraint": {
+                "type": "string",
+                "description": "version constraint of igor-php/igor-php in composer.json"
+              },
+              "update_command": {
+                "type": "string",
+                "description": "command to propose to the developer to update igor; never run it without their approval"
+              },
+              "note": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "install"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "root",
+          "framework",
+          "deep_audit",
+          "igor"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Asks the model one question through Symfony AI (bin/console doctor:ask): the question on standard
+# input, the answer on standard output. The runtime probe calls it to unblock a route (IGOR_AI_COMMAND).
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The probe runs in the scanned application's environment: the doctor keeps its own.
+unset APP_ENV APP_DEBUG APP_SECRET DATABASE_URL
+exec php "$root/bin/console" doctor:ask --no-interaction

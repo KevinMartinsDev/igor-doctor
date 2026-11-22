@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Igor Doctor · live dissection</title>
+<link rel="icon" type="image/png" href="/igor-face.png">
+<style>
+  :root {
+    --bg: #081113;
+    --panel: #0e1c1d;
+    --panel-2: #122526;
+    --line: #1d3634;
+    --text: #d6ebe6;
+    --muted: #7f9c96;
+    --teal: #3fd0b6;
+    --teal-dim: #1f6f62;
+    --violet: #a98bff;
+    --amber: #f3b54a;
+    --red: #ff5a6a;
+    --white: #f4fbf9;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 var(--sans); overflow-x: hidden; }
+  body { display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
+
+  header { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #0d1d1e, var(--bg)); flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand b { font-size: 17px; letter-spacing: .5px; color: var(--white); }
+  .brand span { color: var(--teal); font: 12px var(--mono); text-transform: uppercase; letter-spacing: 2px; }
+  .app { font: 12px var(--mono); color: var(--muted); }
+  .app em { color: var(--text); font-style: normal; }
+  .phase { margin-left: auto; font: 11px var(--mono); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--teal-dim); color: var(--teal); text-transform: uppercase; letter-spacing: 1.5px; }
+  .phase.done { color: var(--white); background: var(--teal-dim); }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .stat { display: grid; font: 11px var(--mono); color: var(--muted); }
+  .stat b { font: 600 18px var(--mono); color: var(--white); font-variant-numeric: tabular-nums; }
+  .stat.red b { color: var(--red); }
+
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 14px; padding: 14px 20px; min-height: 0; height: calc(100vh - 110px); }
+  @media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr); height: auto; } .table { max-height: 70vh; } aside { grid-template-rows: auto auto 320px 320px; } }
+
+  .panel { overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; min-height: 0; display: flex; flex-direction: column; }
+  .panel h2 { margin: 0; padding: 10px 14px; font: 600 11px var(--mono); text-transform: uppercase; letter-spacing: 2px; color: var(--muted); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
+  .panel h2 small { color: var(--teal); letter-spacing: 1px; }
+
+  /* operating table */
+  .table { position: relative; overflow: auto; padding: 14px; flex: 1; background:
+      radial-gradient(ellipse at 50% 0%, rgba(63, 208, 182, .07), transparent 60%),
+      repeating-linear-gradient(0deg, transparent 0 23px, rgba(63, 208, 182, .035) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, rgba(63, 208, 182, .035) 23px 24px); }
+  .organs { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .organ { border: 1px dashed var(--line); border-radius: 12px; padding: 8px; background: rgba(14, 28, 29, .75); max-width: 100%; }
+  .organ > header { all: unset; display: flex; gap: 8px; align-items: baseline; font: 600 11px var(--mono); color: var(--muted); margin: 0 2px 6px; }
+  .organ > header b { color: var(--text); }
+  .tiles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tile { position: relative; display: flex; align-items: center; gap: 5px; padding: 3px 7px 3px 5px; border-radius: 6px; font: 11px var(--mono); color: var(--muted); background: #0b1718; border: 1px solid #16292a; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: border-color .4s, color .4s, background .4s; }
+  .tile .m { font-size: 9px; padding: 0 3px; border-radius: 3px; background: #15302d; color: var(--teal); }
+  .tile .m.post { background: #2c2440; color: var(--violet); }
+  .tile .p { overflow: hidden; text-overflow: ellipsis; }
+  .tile.seen { color: var(--text); border-color: #24433f; }
+  .tile.probed { color: var(--white); border-color: var(--teal-dim); background: #0f2422; }
+  .tile.active { border-color: var(--teal); box-shadow: 0 0 0 2px rgba(63, 208, 182, .25), 0 0 18px rgba(63, 208, 182, .35); z-index: 2; }
+  .tile.leak { border-color: var(--red); background: #2a1216; color: #ffd9dd; box-shadow: 0 0 14px rgba(255, 90, 106, .35); }
+  .tile.crash { border-color: var(--amber); background: #2a2010; }
+  .tile.kept:not(.leak) { border-color: #a8742a; background: #21190c; color: #f7dfb5; box-shadow: 0 0 10px rgba(243, 181, 74, .25); }
+  .specimen.retention { border-color: #4a3a1a; background: linear-gradient(180deg, #1c160b, #15110a); }
+  .specimen.retention .k { color: var(--amber); }
+  .leak.kept { border-color: #4a3a1a; background: linear-gradient(180deg, #1c160b, #15110a); }
+  .leak.kept .type { color: var(--amber); }
+  .tag.exposure, .tag.growth, .tag.crash { background: rgba(255, 90, 106, .15); color: var(--red); } .tag.retention { background: rgba(243, 181, 74, .15); color: var(--amber); }
+  .tile { cursor: pointer; }
+  .tile.cov-ok { box-shadow: inset 3px 0 0 var(--teal); }
+  .tile.cov-partial { box-shadow: inset 3px 0 0 var(--amber); }
+  .tile.cov-none { box-shadow: inset 3px 0 0 #50605e; border-style: dashed; color: var(--muted); background: #0a1415; }
+  .tile.leak.cov-ok, .tile.leak.cov-partial { box-shadow: inset 3px 0 0 var(--red), 0 0 14px rgba(255, 90, 106, .35); }
+  .tile.hidden, .organ.hidden { display: none; }
+  .tile.selected { outline: 2px solid var(--white); outline-offset: 1px; }
+  .tile.unblocked .p::after { content: " ✦"; color: var(--violet); }
+
+  /* coverage strip */
+  .coverage { position: sticky; top: -14px; z-index: 7; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -14px -14px 12px; padding: 10px 14px; background: rgba(8, 17, 19, .92); border-bottom: 1px solid var(--line); backdrop-filter: blur(4px); }
+  .coverage .gauge { display: flex; height: 8px; width: 180px; border-radius: 4px; overflow: hidden; background: #10201f; }
+  .coverage .gauge i { display: block; height: 100%; transition: width .3s; }
+  .coverage .gauge .g-ok { background: var(--teal); } .coverage .gauge .g-partial { background: var(--amber); } .coverage .gauge .g-none { background: #50605e; }
+  .coverage .pct { font: 600 13px var(--mono); color: var(--white); margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .chip { font: 11px var(--mono); color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+  .chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .chip.on { border-color: var(--teal); color: var(--text); background: rgba(63, 208, 182, .08); }
+
+  /* route detail */
+  #drawer { position: fixed; top: 0; right: 0; height: 100vh; width: min(560px, 100vw); background: #0b1819; border-left: 1px solid var(--line); box-shadow: -20px 0 40px rgba(0, 0, 0, .5); transform: translateX(105%); transition: transform .28s cubic-bezier(.3, .7, .2, 1); z-index: 20; display: flex; flex-direction: column; }
+  #drawer.open { transform: none; }
+  #drawer .head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+  #drawer .head .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  #drawer .name { font: 600 14px var(--mono); color: var(--white); word-break: break-all; }
+  #drawer .path { font: 12px var(--mono); color: var(--muted); margin-top: 4px; word-break: break-all; }
+  #drawer .close { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; font: 12px var(--mono); padding: 2px 8px; cursor: pointer; }
+  #drawer .body { overflow: auto; padding: 4px 18px 24px; flex: 1; }
+  #drawer h3 { font: 600 10px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+  .pill { display: inline-block; font: 600 10px var(--mono); letter-spacing: 1px; text-transform: uppercase; border-radius: 999px; padding: 3px 10px; margin-top: 10px; }
+  .pill.ok { background: rgba(63, 208, 182, .15); color: var(--teal); } .pill.partial { background: rgba(243, 181, 74, .15); color: var(--amber); } .pill.none { background: #1c2829; color: var(--muted); } .pill.pending { background: #132425; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; font: 12px var(--mono); }
+  .kv span:nth-child(odd) { color: var(--muted); }
+  .kv span:nth-child(even) { color: var(--text); word-break: break-all; }
+  .why { border: 1px solid #3a3220; background: #15120b; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .why.none { border-color: #2b3a3a; background: #0f1a1b; }
+  .why li { margin: 2px 0 6px; }
+  .why .fix { color: var(--muted); font-size: 11.5px; }
+  .sendings { width: 100%; border-collapse: collapse; font: 11px var(--mono); }
+  .sendings td { padding: 5px 6px; border-top: 1px solid #142627; vertical-align: top; }
+  .sendings td.u { white-space: nowrap; }
+  .sendings .uri { color: var(--text); word-break: break-all; }
+  .sendings .r { color: var(--muted); display: block; margin-top: 2px; }
+  .sendings .ok { color: var(--teal); } .sendings .no { color: #8a9a97; }
+  .tmpl { font: 12px var(--mono); color: var(--text); background: #0f1f20; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; word-break: break-all; }
+  .tmpl .ph { color: var(--amber); }
+  .ai { margin-top: 18px; width: 100%; font: 600 12px var(--mono); padding: 10px; border-radius: 8px; border: 1px dashed var(--violet); color: var(--violet); background: rgba(169, 139, 255, .06); cursor: pointer; transition: background .2s; }
+  .ai:hover { background: rgba(169, 139, 255, .14); }
+  .ai:disabled { cursor: progress; opacity: .7; }
+  .ai small { display: block; font-weight: 400; color: var(--muted); margin-top: 3px; }
+  .unblock { margin-top: 14px; border: 1px solid #3b3260; background: #120f1f; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .unblock .step { margin: 6px 0 10px; padding-left: 10px; border-left: 2px solid #3b3260; }
+  .unblock .step b { font: 600 10px var(--mono); letter-spacing: 1px; color: var(--violet); text-transform: uppercase; }
+  .unblock .step.ok { border-left-color: var(--teal); } .unblock .step.ok b { color: var(--teal); }
+  .unblock .step.ko { border-left-color: #ff8a5a; } .unblock .step.ko b { color: #ff8a5a; }
+  .unblock .req { font: 11px var(--mono); color: var(--text); word-break: break-all; margin-top: 4px; }
+  .unblock .ans { font: 11px var(--mono); color: var(--muted); margin-top: 3px; }
+  .thinking::after { content: "…"; animation: dots 1.2s steps(4) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
+  @keyframes dots { from { width: 0; } to { width: 1.2em; } }
+  .dots { display: inline-flex; gap: 2px; margin-left: 2px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #23403c; }
+  .dot.s2 { background: var(--teal); } .dot.s3 { background: var(--amber); } .dot.s4 { background: #ff8a5a; } .dot.s5 { background: var(--red); }
+
+  /* the incision: a line drawn across, then the tile is opened along it */
+  .tile.cut::after { content: ""; position: absolute; left: -10%; top: 50%; width: 120%; height: 2px; background: linear-gradient(90deg, transparent, var(--white), var(--red), transparent); transform: rotate(-12deg) scaleX(0); transform-origin: left; animation: incise .32s ease-out forwards; }
+  .tile.cut { animation: open .5s ease-out; }
+  @keyframes incise { to { transform: rotate(-12deg) scaleX(1); opacity: 0; } }
+  @keyframes open { 0% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); } 35% { clip-path: polygon(0 0, 100% 0, 100% 38%, 0 62%); transform: translateY(-1px); } 100% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); } }
+  .tile.leak.cut::after { background: linear-gradient(90deg, transparent, var(--red), transparent); }
+
+  .crumbs { position: absolute; pointer-events: none; font: 10px var(--mono); color: var(--red); animation: fly 1.2s ease-out forwards; z-index: 5; }
+  @keyframes fly { from { opacity: 1; transform: translate(0, 0) rotate(0); } to { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); } }
+
+  /* Igor Doctor */
+  /* the magnifying glass: it rests on the route being probed and shows it enlarged */
+  #doctor { position: absolute; left: 0; top: 0; width: 118px; height: 118px; pointer-events: none; z-index: 6; transition: transform .45s cubic-bezier(.3, .7, .2, 1); }
+  #doctor .lens { position: absolute; left: 0; top: 0; width: 92px; height: 92px; border-radius: 50%; border: 5px solid var(--teal); background: rgba(8, 17, 19, .9); box-shadow: 0 0 0 2px #050c0d, 0 8px 22px rgba(0, 0, 0, .65), inset 0 0 20px rgba(63, 208, 182, .22); overflow: hidden; display: flex; align-items: center; justify-content: center; transition: border-color .25s, box-shadow .25s, transform .12s; }
+  #doctor .lens::after { content: ""; position: absolute; inset: 6px 30px 34px 8px; border-radius: 50%; background: radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, .28), transparent 65%); }
+  #doctor .zoom { display: grid; gap: 2px; justify-items: center; text-align: center; padding: 0 6px; max-width: 100%; }
+  #doctor .zoom .zm { font: 600 10px var(--mono); padding: 0 5px; border-radius: 4px; background: #15302d; color: var(--teal); }
+  #doctor .zoom .zm.post { background: #2c2440; color: var(--violet); }
+  #doctor .zoom .zp { font: 600 14px/1.15 var(--mono); color: var(--white); word-break: break-all; max-width: 78px; }
+  #doctor .handle { position: absolute; left: 80px; top: 80px; width: 13px; height: 40px; border-radius: 7px; background: linear-gradient(90deg, #3c4f4c, #6d8885, #3c4f4c); transform: rotate(-45deg); transform-origin: 50% 0; box-shadow: 0 4px 10px rgba(0, 0, 0, .5); }
+  #doctor.slash .lens { transform: scale(1.07); }
+  #doctor.alarm .lens { border-color: var(--red); box-shadow: 0 0 0 2px #050c0d, 0 0 26px rgba(255, 90, 106, .6), inset 0 0 22px rgba(255, 90, 106, .3); }
+  #doctor.warn .lens { border-color: var(--amber); box-shadow: 0 0 0 2px #050c0d, 0 0 22px rgba(243, 181, 74, .45), inset 0 0 20px rgba(243, 181, 74, .25); }
+  #doctor .bubble { position: absolute; left: 70px; top: -8px; padding: 2px 8px; border-radius: 7px; background: var(--white); color: var(--bg); font: 700 9px var(--mono); white-space: nowrap; opacity: 0; transition: opacity .3s; }
+  #doctor .bubble::after { content: ""; position: absolute; left: 10px; bottom: -5px; border: 5px solid transparent; border-top-color: var(--white); border-bottom: 0; }
+  #doctor.speak .bubble { opacity: 1; }
+  .brand img { height: 34px; width: auto; border-radius: 6px; background: #f6fbf2; padding: 1px 4px; align-self: center; }
+
+  /* monitor column */
+  aside { min-width: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) minmax(0, 1fr); gap: 14px; min-height: 0; }
+  .ecg { height: 110px; display: block; width: 100%; }
+  .vitals { display: flex; justify-content: space-between; padding: 6px 14px 10px; font: 11px var(--mono); color: var(--muted); }
+  .vitals b { color: var(--teal); font-size: 15px; }
+  .vitals .mem b { color: var(--amber); }
+  .spark { height: 46px; width: 100%; display: block; }
+
+  .now { padding: 10px 14px; font: 12px var(--mono); min-height: 92px; }
+  .now .uri { color: var(--white); word-break: break-all; }
+  .now .meta { color: var(--muted); margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .mark { color: var(--bg); background: var(--amber); border-radius: 3px; padding: 0 2px; }
+  .user { display: inline-block; min-width: 18px; text-align: center; border-radius: 4px; font: 600 10px var(--mono); padding: 0 4px; }
+  .user.a { background: var(--teal-dim); color: var(--white); } .user.b { background: #4a3a86; color: var(--white); } .user.anon { background: #2a3536; color: var(--muted); }
+
+  .log { overflow: auto; flex: 1; font: 11px/1.55 var(--mono); padding: 6px 0; }
+  .log div { padding: 0 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .log div .st { display: inline-block; width: 30px; }
+  .log .s2 { color: var(--teal); } .log .s3 { color: var(--amber); } .log .s4 { color: #ff8a5a; } .log .s5 { color: var(--red); }
+  .log .note { color: var(--text); }
+
+  .specimens { overflow: auto; flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .specimen { border: 1px solid #3a1d22; background: linear-gradient(180deg, #1d1013, #170d10); border-radius: 8px; padding: 8px 10px; animation: drop .5s ease-out; }
+  .specimen.suspect { border-color: #3a3220; background: #17140d; }
+  .specimen.known { border-color: var(--line); background: var(--panel-2); opacity: .75; }
+  .specimen.known .k { color: var(--muted); }
+  @keyframes drop { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
+  .specimen .k { font: 600 10px var(--mono); letter-spacing: 1px; color: var(--red); display: flex; justify-content: space-between; gap: 8px; }
+  .specimen.suspect .k { color: var(--amber); }
+  .specimen .o { font: 12px var(--mono); color: var(--white); margin: 3px 0; word-break: break-all; }
+  .specimen .e { color: var(--text); font-size: 12px; }
+  .specimen .w { font: 11px var(--mono); color: var(--muted); margin-top: 4px; word-break: break-all; }
+  .specimen .loc { color: var(--teal); }
+  .empty { color: var(--muted); font: 12px var(--mono); padding: 14px; text-align: center; }
+
+  /* diagnosis report */
+  .lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .lang button { font: 600 11px var(--mono); background: transparent; color: var(--muted); border: 0; padding: 5px 10px; cursor: pointer; }
+  .lang button.on { background: var(--teal-dim); color: var(--white); }
+  .lang + .report-btn, .lang ~ .phase { margin-left: 0; }
+  .report-btn { display: none; font: 600 11px var(--mono); letter-spacing: 1px; text-transform: uppercase; border: 1px solid var(--red); color: var(--white); background: rgba(255, 90, 106, .15); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .report-btn.on { display: inline-block; }
+  #report { position: fixed; inset: 0; z-index: 30; background: rgba(4, 9, 10, .78); backdrop-filter: blur(3px); display: none; overflow: auto; padding: 28px 16px; }
+  #report.open { display: block; }
+  #report .sheet { max-width: 1040px; margin: 0 auto; background: #0b1819; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 30px 80px rgba(0, 0, 0, .6); }
+  #report .top { display: flex; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+  #report .top img { height: 46px; border-radius: 8px; background: #f6fbf2; padding: 2px 5px; }
+  #report .top h1 { margin: 0; font: 600 18px var(--sans); color: var(--white); }
+  #report .top p { margin: 2px 0 0; font: 12px var(--mono); color: var(--muted); }
+  #report .top button { margin-left: auto; }
+  #report .inner { padding: 6px 22px 26px; }
+  #report h2 { font: 600 11px var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin: 24px 0 10px; display: flex; gap: 10px; align-items: baseline; }
+  #report h2 small { color: var(--text); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: var(--panel); }
+  .card b { display: block; font: 600 22px var(--mono); color: var(--white); font-variant-numeric: tabular-nums; }
+  .card span { font: 11px var(--mono); color: var(--muted); }
+  .card.red b { color: var(--red); } .card.amber b { color: var(--amber); } .card.teal b { color: var(--teal); }
+  .leak { border: 1px solid #3a1d22; background: linear-gradient(180deg, #1a0f12, #140c0f); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .leak .head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .leak .type { font: 600 10px var(--mono); letter-spacing: 1px; color: var(--red); text-transform: uppercase; }
+  .leak .owner { font: 600 13px var(--mono); color: var(--white); word-break: break-all; margin: 4px 0; }
+  .leak .ev { font-size: 13px; color: var(--text); }
+  .leak .meta { display: grid; grid-template-columns: 90px 1fr; gap: 3px 10px; font: 11.5px var(--mono); margin-top: 8px; }
+  .leak .meta span:nth-child(odd) { color: var(--muted); }
+  .leak .meta span:nth-child(even) { color: var(--text); word-break: break-all; }
+  .leak .fix { margin-top: 8px; font-size: 12px; color: var(--teal); }
+  .pkg { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; background: var(--panel); }
+  .pkg > .ph { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .pkg > .ph b { font: 600 14px var(--mono); color: var(--white); }
+  .pkg > .ph em { font: 12px var(--mono); color: var(--amber); font-style: normal; }
+  .up { font: 600 11px var(--mono); border: 1px solid var(--teal-dim); color: var(--teal); background: rgba(63, 208, 182, .08); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  .up:disabled { opacity: .6; cursor: progress; }
+  .upres { margin-top: 10px; border: 1px solid #1f3b38; background: #0c1a1a; border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .upres .verdict { color: var(--white); font-weight: 600; margin-bottom: 6px; }
+  .upres .row { font: 11.5px var(--mono); color: var(--muted); margin: 3px 0; }
+  .upres .row b { color: var(--text); font-weight: 600; }
+  .upres a { color: var(--teal); }
+  .upres ul { margin: 6px 0 0; padding-left: 18px; }
+  .upres li { margin: 3px 0; font-size: 12px; }
+  .tag { font: 600 9px var(--mono); padding: 1px 6px; border-radius: 4px; background: #1c2a2b; color: var(--muted); text-transform: uppercase; margin-right: 4px; }
+  .tag.open { background: rgba(63, 208, 182, .15); color: var(--teal); } .tag.closed { background: #2a2232; color: var(--violet); }
+  .compact { font: 12px var(--mono); color: var(--muted); }
+  .compact div { padding: 5px 0; border-top: 1px solid #142627; }
+  .compact b { color: var(--text); font-weight: 600; }
+  .none-found { color: var(--muted); font: 12px var(--mono); padding: 6px 0; }
+
+  footer { padding: 8px 20px 14px; display: flex; align-items: center; gap: 14px; font: 11px var(--mono); color: var(--muted); }
+  .bar { flex: 1; height: 6px; border-radius: 3px; background: #10201f; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--teal-dim), var(--teal)); transition: width .3s; }
+  .speed { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; margin-left: auto; }
+  .speed .speed-label { font: 11px var(--mono); color: var(--muted); padding: 0 6px 0 11px; }
+  .speed button { font: 600 11px var(--mono); background: transparent; color: var(--muted); border: 0; padding: 5px 9px; cursor: pointer; }
+  .speed button.on { background: var(--teal-dim); color: var(--white); }
+  .replay { font: 600 11px var(--mono); background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+  .replay:hover { border-color: var(--teal-dim); color: var(--teal); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><img src="/igor-php.png" alt="Igor PHP"><b>Igor Doctor</b><span data-i18n="brand">live dissection</span></div>
+  <div class="app" id="app" data-i18n="waiting_patient">waiting for the patient…</div>
+  <div class="stats">
+    <div class="stat"><b id="n-routes">0</b><span data-i18n="routes">routes</span></div>
+    <div class="stat"><b id="n-pages">0</b><span data-i18n="pages">pages</span></div>
+    <div class="stat"><b id="n-forms">0</b><span data-i18n="forms">forms</span></div>
+    <div class="stat"><b id="n-requests">0</b><span data-i18n="requests">requests</span></div>
+    <div class="stat"><b id="n-rollbacks">0</b><span data-i18n="rollbacks">rollbacks</span></div>
+    <div class="stat red"><b id="n-leaks">0</b><span data-i18n="leaks">leaks</span></div>
+  </div>
+  <div class="speed" id="speed"><span class="speed-label" data-i18n="speed">speed</span><button data-speed="0.5">0.5×</button><button data-speed="1">1×</button><button data-speed="4">4×</button><button data-speed="0" data-i18n="live">live</button></div>
+  <button class="replay" id="replay" data-i18n="replay">↺ replay</button>
+  <div class="lang" id="lang"><button data-lang="en">EN</button><button data-lang="fr">FR</button></div>
+  <button class="report-btn" id="report-btn" data-i18n="diagnosis">diagnosis</button>
+  <div class="phase" id="phase">waiting</div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2><span data-i18n="table">Operating table</span> <small id="table-note" data-i18n="table_note">the router, organ by organ</small></h2>
+    <div class="table" id="table">
+      <div class="coverage" id="coverage">
+        <span class="pct" id="cov-pct">–</span>
+        <span class="gauge"><i class="g-ok" id="g-ok"></i><i class="g-partial" id="g-partial"></i><i class="g-none" id="g-none"></i></span>
+        <button class="chip on" data-filter="all"><span data-i18n="chip_all">all</span> <b id="c-all">0</b></button>
+        <button class="chip" data-filter="ok"><i style="background:var(--teal)"></i><span data-i18n="chip_ok">tested</span> <b id="c-ok">0</b></button>
+        <button class="chip" data-filter="partial"><i style="background:var(--amber)"></i><span data-i18n="chip_partial">partial</span> <b id="c-partial">0</b></button>
+        <button class="chip" data-filter="none"><i style="background:#50605e"></i><span data-i18n="chip_none">not tested</span> <b id="c-none">0</b></button>
+        <button class="chip" data-filter="leak"><i style="background:var(--red)"></i><span data-i18n="chip_leak">leaks</span> <b id="c-leak">0</b></button>
+      </div>
+      <div class="organs" id="organs"></div>
+      <div id="doctor" aria-hidden="true">
+        <div class="handle"></div>
+        <div class="lens"><div class="zoom" id="zoom"></div></div>
+        <div class="bubble"><span id="say">snip!</span></div>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <section class="panel">
+      <h2><span data-i18n="monitor">Monitor</span> <small id="rate">0 req/s</small></h2>
+      <canvas class="ecg" id="ecg"></canvas>
+      <div class="vitals">
+        <span><span data-i18n="last">last</span> <b id="ms">0</b> ms</span>
+        <span><span data-i18n="state">state</span> <b id="nodes">0</b> <span data-i18n="nodes">nodes</span></span>
+        <span class="mem"><span data-i18n="memory">memory</span> <b id="mem">0</b> MB</span>
+      </div>
+      <canvas class="spark" id="spark"></canvas>
+    </section>
+    <section class="panel">
+      <h2 data-i18n="on_table">On the table</h2>
+      <div class="now" id="now"><span class="empty" data-i18n="nothing_yet">nothing yet</span></div>
+    </section>
+    <section class="panel">
+      <h2><span data-i18n="specimens">Specimens</span> <small id="spec-note" data-i18n="spec_note">state that survived a request</small></h2>
+      <div class="specimens" id="specimens"><div class="empty" data-i18n="no_leak_yet">no leak found yet</div></div>
+    </section>
+    <section class="panel">
+      <h2 data-i18n="requests_panel">Requests</h2>
+      <div class="log" id="log"></div>
+    </section>
+  </aside>
+</main>
+
+<div id="report" aria-hidden="true"><div class="sheet">
+  <div class="top"><img src="/igor-php.png" alt="Igor PHP"><div><h1 data-i18n="report_title">Diagnosis</h1><p id="r-sub"></p></div><button class="close" id="r-close">esc ✕</button></div>
+  <div class="inner" id="r-body"></div>
+</div></div>
+
+<div id="drawer" aria-hidden="true">
+  <div class="head">
+    <div class="top"><div><div class="name" id="d-name"></div><div class="path" id="d-path"></div></div><button class="close" id="d-close">esc ✕</button></div>
+    <span class="pill" id="d-status"></span>
+  </div>
+  <div class="body" id="d-body"></div>
+</div>
+
+<footer>
+  <span id="progress-text">0 / 0 probes</span>
+  <div class="bar"><i id="progress"></i></div>
+</footer>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // ---- languages -----------------------------------------------------------------------------
+  const I18N = {
+    en: {
+      speed: 'speed', live: 'live', replay: '↺ replay', brand: 'live dissection', waiting_patient: 'waiting for the patient…', routes: 'routes', pages: 'pages', forms: 'forms', requests: 'requests', rollbacks: 'rollbacks', leaks: 'leaks', diagnosis: 'diagnosis',
+      phase_waiting: 'waiting', phase_anaesthesia: 'anaesthesia', phase_exploring: 'exploring', phase_operating: 'operating', phase_closed: 'closed',
+      table: 'Operating table', table_note: 'the router, organ by organ', chip_all: 'all', chip_ok: 'tested', chip_partial: 'partial', chip_none: 'not tested', chip_leak: 'leaks', covered: (p) => `${p}% covered`,
+      monitor: 'Monitor', reqs: (n) => `${n} req/s`, last: 'last', state: 'state', nodes: 'nodes', memory: 'memory', on_table: 'On the table', nothing_yet: 'nothing yet',
+      specimens: 'Specimens', spec_note: 'state that survived a request', no_leak_yet: 'no leak found yet', requests_panel: 'Requests', probes_progress: (a, b) => `${a} / ${b} probes`,
+      sending: (n) => `sending ${n}`, rolled_back: '↺ rolled back', tour: 'tour', explore: 'explore', links: (n) => `${n} links`, forms_n: (n) => `${n} forms`,
+      patient: (app, users, forms, tour) => `patient <em>${app}</em> · ${users ? users + ' users' : 'anonymous'}${forms ? ' · forms' : ''}${tour ? ' · tour' : ''}`,
+      crashed: (p) => `✖ ${p} ended the process`,
+      h_route: 'Route', controller: 'controller', reached_n: (a, b) => `${a} / ${b} sendings`, reached: 'reached', stopped: 'stopped', pages_seen: 'pages seen',
+      why: (s) => (s === 'partial' ? 'Why it is only partly tested' : 'Why it is not tested'), how_built: 'How the requests were built', body: 'body', csrf_from: 'CSRF token read from',
+      sendings: 'Sendings', findings_route: 'Findings on this route', unblocked: 'Unblocked with AI', ai_working: '✦ Igor is working on it', ai_retry: 'Try again', ai_button: 'Unblock with AI',
+      ai_hint: 'reads the route, its controller, its entities and the answers above, and writes a request recipe the probe replays (rolled back) · asked through Symfony AI · up to 3 attempts',
+      status_ok: 'tested', status_partial: 'partially tested', status_none: 'not tested', status_pending: 'waiting', known: 'known', certain: 'certain', suspect: 'suspect',
+      impact_exposure: 'exposed', impact_retention: 'kept in memory', impact_growth: 'grows', impact_crash: 'ends the process',
+      crash_text: 'the request ended the PHP process (exit, die or a fatal error)', crash_fix: 'a worker restarts after such a request: remove the exit() or die()',
+      internal_text: 'internal route of the framework or a bundle', internal_fix: 'not probed on purpose',
+      noform_text: (m) => `no page of the scan sends this ${m} request`, noform_fix: 'a form on a page the scan did not reach, or an API call that needs a JSON body',
+      nobuild_text: 'the scan built no request for this route', nobuild_fix: 'filtered by --route, or a path parameter the probe could not fill',
+      r404: (params) => `not found (404)${params ? ': the identifier put in the URL does not exist' : ''}`, fix404_data: 'needs real data: load fixtures, or read real identifiers from the database (next step of the probe)', fix404: 'the route answers 404 for the values sent',
+      r401: 'authentication required (401)', fix401: 'a token API: the probe logs in through sessions only so far',
+      r403: (user) => `access denied (403) ${user ? 'for ' + user : 'anonymously'}`, fix403: 'give two users that have the role this route requires',
+      r422: (reason) => `validation refused the values (422)${reason ? ': ' + reason : ''}`, fix422: 'the generated values must follow the validation constraints (next step of the probe)',
+      redirected: (reason) => `${reason || 'redirected'} before the controller ran`, fix_login: 'needs a logged-in user: run the scan with --user', fix_listener: 'a listener redirected the request (wizard, locale, terms to accept…)',
+      r405: 'method not allowed (405)', fix405: 'the probe sent the wrong method', r500: (s, reason) => `server error (${s})${reason ? ': ' + reason : ''}`, fix500: 'an exception in the application for the values sent: read the log',
+      rnoctl: (s, reason) => `answered ${s} before reaching the controller${reason ? ': ' + reason : ''}`, fixnoctl: 'a listener answered first', ranswered: (s, reason) => `answered ${s}${reason ? ': ' + reason : ''}`,
+      asking: 'asking', to_model: 'sending the route to the model', could_not_start: 'could not start', attempt: (n) => `attempt ${n}`, reads: 'Igor reads the route and the answers',
+      recipe: (n) => `recipe ${n}`, rejected: (n) => `recipe ${n} rejected`, it_works: 'it works', still_blocked: 'still blocked',
+      tested_after: (n, file) => `after ${n} recipe(s) · saved to ${file}, replayed by the next scans`, gave_up: 'gave up',
+      say_kept: 'kept…', say_grows: 'it grows!', say_nope: 'nope…', say_done: 'done.', say_forms: (n) => `${n} form${n > 1 ? 's' : ''}!`,
+      report_title: 'Diagnosis', card_cov: (ok, p, n) => `routes covered (${ok} tested · ${p} partial · ${n} not)`, card_mine: 'leaks in your code (exposed, growing, crashing)', card_deps: 'leaks in dependencies',
+      card_kept: 'values kept in memory (retention)', card_suspects: 'suspects to read', card_known: 'known and harmless',
+      h_app: 'In your application', h_app_note: 'fix these: the doctor can patch them (igor:doctor --runtime)', none_app: 'No certain leak in your code.',
+      h_deps: 'In your dependencies', h_deps_note: 'do not patch vendor/: upgrade, or report upstream', none_deps: 'No certain leak in a dependency.',
+      search_btn: '⌕ Search for an upstream fix', search_holder: (c, p) => `⌕ Search where it is kept: ${c}::$${p}`,searching: '⌕ Searching Packagist and GitHub…', searched: '⌕ Searched',
+      h_else: 'Elsewhere', h_else_note: 'owner not located in a file', h_suspects: 'Suspects', h_suspects_note: 'a value changes after every request: read the code to decide',
+      h_known: 'Known and harmless', h_known_note: 'framework state already fixed upstream or without effect',
+      fix_from: 'fix from', reached_from: 'reached from', routes_l: 'routes', state_l: 'state', service: (x) => `service ${x}`,
+      kept_note: 'Kept until the next request, which is not proven to read it: check whether the code reads it before writing it again. If not, it is a memory and privacy concern, not a leak between users.',
+      fix_CROSS_REQUEST_STATE_LEAK: 'Reset this state between requests: implement Symfony\\Contracts\\Service\\ResetInterface (reset() clears it), or keep it in the request (RequestStack) instead of the service.',
+      fix_MONOTONIC_MEMORY_GROWTH: 'Bound or clear this array: reset it between requests (ResetInterface), or cap it (LRU).',
+      fix_ZOMBIE_REQUEST_RETENTION: 'Do not keep the Request after it is handled: read it from the RequestStack when needed, and drop references at the end of the request.',
+      fix_EXECUTION_TERMINATED: 'Replace exit() or die() with a Response or an exception: a worker restarts and loses everything it kept.',
+      installed: 'installed', latest_release: 'latest release', repository: 'repository', file_in: (p, v) => `${p} in ${v}`, dev_branch: 'on the development branch',
+      changed: (a, r) => `changed (+${a} / −${r} lines)`, unchanged: 'unchanged', adds: 'adds', read_file: 'read the file', compare: (a, b) => `compare ${a}…${b}`,
+      issues_intro: 'issues and pull requests that name the class:', no_issues: 'no issue or pull request names the class', search_issues: 'search the issues on GitHub', search_failed: (m) => `The search failed: ${m}`,
+      v_norepo: 'The package is not hosted on GitHub, or not on Packagist: compare the versions by hand.', v_nofile: 'The file could not be compared: read the issues below, or the changelog.',
+      v_latest_head: 'You run the latest release; the file changed on the development branch since: a fix may be on its way.',
+      v_latest_same: 'You run the latest release and the file is unchanged upstream: probably not fixed yet. Check the issues, or report it.',
+      v_changed: (v) => `The file changed in ${v}: upgrade and scan again to see whether the leak is gone.`,
+      v_head: (v) => `Unchanged in ${v}, but changed on the development branch: a fix may be on its way.`,
+      v_none: (v) => `Unchanged in ${v} and on the development branch: probably not fixed upstream. Check the issues, or report it.`,
+    },
+    fr: {
+      speed: 'vitesse', live: 'direct', replay: '↺ rejouer', brand: 'dissection en direct', waiting_patient: 'en attente du patient…', routes: 'routes', pages: 'pages', forms: 'formulaires', requests: 'requêtes', rollbacks: 'rollbacks', leaks: 'fuites', diagnosis: 'diagnostic',
+      phase_waiting: 'en attente', phase_anaesthesia: 'anesthésie', phase_exploring: 'exploration', phase_operating: 'opération', phase_closed: 'terminé',
+      table: 'Table d’opération', table_note: 'le router, organe par organe', chip_all: 'toutes', chip_ok: 'testées', chip_partial: 'partielles', chip_none: 'non testées', chip_leak: 'fuites', covered: (p) => `${p} % couvertes`,
+      monitor: 'Moniteur', reqs: (n) => `${n} req/s`, last: 'dernière', state: 'état', nodes: 'nœuds', memory: 'mémoire', on_table: 'Sur la table', nothing_yet: 'rien pour l’instant',
+      specimens: 'Spécimens', spec_note: 'état qui a survécu à une requête', no_leak_yet: 'aucune fuite pour l’instant', requests_panel: 'Requêtes', probes_progress: (a, b) => `${a} / ${b} sondes`,
+      sending: (n) => `envoi ${n}`, rolled_back: '↺ annulé', tour: 'tour', explore: 'explore', links: (n) => `${n} liens`, forms_n: (n) => `${n} formulaires`,
+      patient: (app, users, forms, tour) => `patient <em>${app}</em> · ${users ? users + ' utilisateurs' : 'anonyme'}${forms ? ' · formulaires' : ''}${tour ? ' · tour' : ''}`,
+      crashed: (p) => `✖ ${p} a arrêté le processus`,
+      h_route: 'Route', controller: 'contrôleur', reached_n: (a, b) => `${a} / ${b} envois`, reached: 'atteint', stopped: 'arrêté', pages_seen: 'pages vues',
+      why: (s) => (s === 'partial' ? 'Pourquoi elle n’est que partiellement testée' : 'Pourquoi elle n’est pas testée'), how_built: 'Comment les requêtes ont été construites', body: 'corps', csrf_from: 'jeton CSRF lu sur',
+      sendings: 'Envois', findings_route: 'Trouvailles sur cette route', unblocked: 'Débloquée avec l’IA', ai_working: '✦ Igor s’en occupe', ai_retry: 'Réessayer', ai_button: 'Débloquer avec l’IA',
+      ai_hint: 'lit la route, son contrôleur, ses entités et les réponses ci-dessus, et écrit une recette de requête que la sonde rejoue (annulée) · posé via Symfony AI · 3 tentatives au plus',
+      status_ok: 'testée', status_partial: 'partiellement testée', status_none: 'non testée', status_pending: 'en attente', known: 'connu', certain: 'certaine', suspect: 'suspecte',
+      impact_exposure: 'exposée', impact_retention: 'gardée en mémoire', impact_growth: 'grossit', impact_crash: 'arrête le processus',
+      crash_text: 'la requête a arrêté le processus PHP (exit, die ou erreur fatale)', crash_fix: 'un worker redémarre après une telle requête : retire le exit() ou le die()',
+      internal_text: 'route interne du framework ou d’un bundle', internal_fix: 'non sondée volontairement',
+      noform_text: (m) => `aucune page du scan n’envoie cette requête ${m}`, noform_fix: 'un formulaire sur une page que le scan n’a pas atteinte, ou un appel d’API qui attend un corps JSON',
+      nobuild_text: 'le scan n’a construit aucune requête pour cette route', nobuild_fix: 'filtrée par --route, ou un paramètre de chemin que la sonde n’a pas su remplir',
+      r404: (params) => `introuvable (404)${params ? ' : l’identifiant mis dans l’URL n’existe pas' : ''}`, fix404_data: 'il faut de vraies données : charger des fixtures, ou lire de vrais identifiants en base (prochaine étape de la sonde)', fix404: 'la route répond 404 aux valeurs envoyées',
+      r401: 'authentification requise (401)', fix401: 'une API à jeton : la sonde ne se connecte encore que par session',
+      r403: (user) => `accès refusé (403) ${user ? 'pour ' + user : 'en anonyme'}`, fix403: 'donne deux utilisateurs qui ont le rôle exigé par cette route',
+      r422: (reason) => `la validation a refusé les valeurs (422)${reason ? ' : ' + reason : ''}`, fix422: 'les valeurs générées doivent respecter les contraintes de validation (prochaine étape de la sonde)',
+      redirected: (reason) => `${reason || 'redirigée'} avant l’exécution du contrôleur`, fix_login: 'il faut un utilisateur connecté : lance le scan avec --user', fix_listener: 'un listener a redirigé la requête (assistant, locale, CGU à accepter…)',
+      r405: 'méthode non autorisée (405)', fix405: 'la sonde a envoyé la mauvaise méthode', r500: (s, reason) => `erreur serveur (${s})${reason ? ' : ' + reason : ''}`, fix500: 'une exception dans l’application pour les valeurs envoyées : lis le log',
+      rnoctl: (s, reason) => `a répondu ${s} avant d’atteindre le contrôleur${reason ? ' : ' + reason : ''}`, fixnoctl: 'un listener a répondu avant', ranswered: (s, reason) => `a répondu ${s}${reason ? ' : ' + reason : ''}`,
+      asking: 'demande', to_model: 'envoi de la route au modèle', could_not_start: 'impossible de démarrer', attempt: (n) => `tentative ${n}`, reads: 'Igor lit la route et les réponses',
+      recipe: (n) => `recette ${n}`, rejected: (n) => `recette ${n} refusée`, it_works: 'ça marche', still_blocked: 'toujours bloquée',
+      tested_after: (n, file) => `après ${n} recette(s) · enregistrée dans ${file}, rejouée par les prochains scans`, gave_up: 'abandon',
+      say_kept: 'gardé…', say_grows: 'ça grossit !', say_nope: 'raté…', say_done: 'terminé.', say_forms: (n) => `${n} formulaire${n > 1 ? 's' : ''} !`,
+      report_title: 'Diagnostic', card_cov: (ok, p, n) => `routes couvertes (${ok} testées · ${p} partielles · ${n} non)`, card_mine: 'fuites dans ton code (exposées, qui grossissent, qui plantent)', card_deps: 'fuites dans les dépendances',
+      card_kept: 'valeurs gardées en mémoire (rétention)', card_suspects: 'suspects à lire', card_known: 'connus et inoffensifs',
+      h_app: 'Dans ton application', h_app_note: 'à corriger : le doctor sait les patcher (igor:doctor --runtime)', none_app: 'Aucune fuite certaine dans ton code.',
+      h_deps: 'Dans tes dépendances', h_deps_note: 'ne patche pas vendor/ : mets à jour, ou signale en amont', none_deps: 'Aucune fuite certaine dans une dépendance.',
+      search_btn: '⌕ Chercher un correctif en amont', search_holder: (c, p) => `⌕ Chercher là où elle est gardée : ${c}::$${p}`,searching: '⌕ Recherche sur Packagist et GitHub…', searched: '⌕ Recherché',
+      h_else: 'Ailleurs', h_else_note: 'propriétaire non localisé dans un fichier', h_suspects: 'Suspects', h_suspects_note: 'une valeur change après chaque requête : lis le code pour trancher',
+      h_known: 'Connus et inoffensifs', h_known_note: 'état du framework déjà corrigé en amont ou sans effet',
+      fix_from: 'corriger depuis', reached_from: 'retenu par', routes_l: 'routes', state_l: 'état', service: (x) => `service ${x}`,
+      kept_note: 'Gardée jusqu’à la requête suivante, sans preuve qu’elle la relise : vérifie si le code la lit avant de la réécrire. Sinon, c’est une question de mémoire et de confidentialité, pas une fuite entre utilisateurs.',
+      fix_CROSS_REQUEST_STATE_LEAK: 'Remets cet état à zéro entre les requêtes : implémente Symfony\\Contracts\\Service\\ResetInterface (reset() le vide), ou garde-le dans la requête (RequestStack) plutôt que dans le service.',
+      fix_MONOTONIC_MEMORY_GROWTH: 'Borne ou vide ce tableau : remets-le à zéro entre les requêtes (ResetInterface), ou limite sa taille (LRU).',
+      fix_ZOMBIE_REQUEST_RETENTION: 'Ne garde pas la Request une fois traitée : lis-la depuis le RequestStack au besoin, et lâche les références en fin de requête.',
+      fix_EXECUTION_TERMINATED: 'Remplace exit() ou die() par une Response ou une exception : un worker redémarre et perd tout ce qu’il gardait.',
+      installed: 'installée', latest_release: 'dernière release', repository: 'dépôt', file_in: (p, v) => `${p} en ${v}`, dev_branch: 'sur la branche de développement',
+      changed: (a, r) => `modifié (+${a} / −${r} lignes)`, unchanged: 'inchangé', adds: 'ajoute', read_file: 'lire le fichier', compare: (a, b) => `comparer ${a}…${b}`,
+      issues_intro: 'issues et pull requests qui citent la classe :', no_issues: 'aucune issue ni pull request ne cite la classe', search_issues: 'chercher dans les issues sur GitHub', search_failed: (m) => `La recherche a échoué : ${m}`,
+      v_norepo: 'Le paquet n’est pas sur GitHub, ou pas sur Packagist : compare les versions à la main.', v_nofile: 'Le fichier n’a pas pu être comparé : lis les issues ci-dessous, ou le changelog.',
+      v_latest_head: 'Tu utilises la dernière release ; le fichier a changé depuis sur la branche de développement : un correctif est peut-être en route.',
+      v_latest_same: 'Tu utilises la dernière release et le fichier n’a pas changé en amont : probablement pas encore corrigé. Regarde les issues, ou signale-le.',
+      v_changed: (v) => `Le fichier a changé en ${v} : mets à jour et relance le scan pour voir si la fuite a disparu.`,
+      v_head: (v) => `Inchangé en ${v}, mais modifié sur la branche de développement : un correctif est peut-être en route.`,
+      v_none: (v) => `Inchangé en ${v} comme sur la branche de développement : probablement pas corrigé en amont. Regarde les issues, ou signale-le.`,
+    },
+  };
+  let lang = 'en';
+  try { lang = localStorage.getItem('igor-lang') || ((navigator.language || '').startsWith('fr') ? 'fr' : 'en'); } catch (e) { lang = (navigator.language || '').startsWith('fr') ? 'fr' : 'en'; }
+  if (!I18N[lang]) lang = 'en';
+  const t = (key, ...args) => { const v = I18N[lang][key] ?? I18N.en[key] ?? key; return typeof v === 'function' ? v(...args) : v; };
+
+
+  const state = {
+    from: 0, queue: [], history: [], speed: 1, users: [], tiles: new Map(), organs: new Map(),
+    pages: 0, forms: 0, requests: 0, rollbacks: 0, leaks: new Set(), probesTotal: 0, probesDone: new Set(),
+    specimens: 0, certain: 0, beats: [], memory: [], lastReq: [], done: false,
+    routes: new Map(), filter: 'all', selected: null,
+  };
+
+  // ---- the router, organ by organ -------------------------------------------------------------
+  function organOf(path) {
+    const parts = path.replace(/^\/\{_?locale\}/, '').split('/').filter(Boolean);
+    const first = parts.find((p) => !p.startsWith('{')) || '/';
+    return first.startsWith('_') ? 'internals' : first;
+  }
+
+  function addRoute(route) {
+    if (state.tiles.has(route.name)) return;
+    const key = organOf(route.path);
+    let organ = state.organs.get(key);
+    if (!organ) {
+      const el = document.createElement('div');
+      el.className = 'organ';
+      el.innerHTML = `<header><b>${esc(key === '/' ? 'root' : key)}</b><span>0</span></header><div class="tiles"></div>`;
+      $('organs').appendChild(el);
+      organ = { el, tiles: el.querySelector('.tiles'), count: 0 };
+      state.organs.set(key, organ);
+    }
+    const methods = (route.methods || []).filter((m) => m !== 'HEAD');
+    const post = methods.includes('POST') && !methods.includes('GET');
+    const tile = document.createElement('div');
+    tile.className = 'tile';
+    tile.title = `${route.name}\n${route.path}`;
+    tile.innerHTML = `<span class="m${post ? ' post' : ''}">${post ? 'POST' : (methods[0] || 'ANY')}</span><span class="p">${esc(route.path)}</span><span class="dots"></span>`;
+    organ.tiles.appendChild(tile);
+    organ.count++;
+    organ.el.querySelector('header span').textContent = organ.count;
+    state.tiles.set(route.name, tile);
+    state.routes.set(route.name, { name: route.name, path: route.path, methods, controller: route.controller || null, tile, organ, sendings: [], probes: new Map(), findings: [], pages: [], crash: false, internal: route.name.startsWith('_') || key === 'internals' });
+    tile.addEventListener('click', () => openDrawer(route.name));
+    $('n-routes').textContent = state.tiles.size;
+    refresh(state.routes.get(route.name));
+  }
+
+  function recordOf(probe) {
+    const tile = tileOf(probe);
+    if (!tile) return null;
+    for (const rec of state.routes.values()) if (rec.tile === tile) return rec;
+    return null;
+  }
+
+  // ---- coverage ------------------------------------------------------------------------------
+  // tested: every sending reached the controller and succeeded; partial: some did; not tested: none did.
+  // With users, the anonymous control sending is expected to be refused, and does not count.
+  function coverage(rec) {
+    // A route unblocked with AI is judged on the sendings of the recipe's user: the other user may be refused
+    // on purpose (a post only its author can delete).
+    const replayed = rec.sendings.filter((x) => !x.tour && x.probe.startsWith('unblock ') && x.user === (rec.unblock?.user ?? null));
+    const all = replayed.length && rec.unblock?.ok ? replayed : rec.sendings.filter((x) => !x.tour);
+    if (rec.crash) return ['none', [{ text: t('crash_text'), fix: t('crash_fix') }]];
+    if (!all.length) return [state.done ? 'none' : 'pending', state.done ? [notProbed(rec)] : []];
+    const counted = all.filter((x) => !(state.users.length && !x.user && !x.controller && [302, 303, 401, 403].includes(x.status)));
+    const good = counted.filter((x) => x.controller && x.status < 400);
+    if (counted.length && good.length === counted.length) return ['ok', []];
+    return [good.length ? 'partial' : 'none', reasons(rec, counted.filter((x) => !(x.controller && x.status < 400)))];
+  }
+
+  function notProbed(rec) {
+    if (rec.internal) return { text: t('internal_text'), fix: t('internal_fix') };
+    if (!rec.methods.includes('GET') && rec.methods.length) return { text: t('noform_text', rec.methods.join('/')), fix: t('noform_fix') };
+    return { text: t('nobuild_text'), fix: t('nobuild_fix') };
+  }
+
+  function reasons(rec, failed) {
+    const seen = new Map();
+    const params = /\{[^}]+\}/.test(rec.path);
+    for (const x of failed) {
+      let r;
+      if (x.status === 404) r = { text: t('r404', params), fix: params ? t('fix404_data') : t('fix404') };
+      else if (x.status === 401) r = { text: t('r401'), fix: t('fix401') };
+      else if (x.status === 403) r = { text: t('r403', x.user), fix: t('fix403') };
+      else if (x.status === 422) r = { text: t('r422', x.reason), fix: t('fix422') };
+      else if (x.status >= 300 && x.status < 400 && !x.controller) r = { text: t('redirected', x.reason), fix: x.reason && /login/.test(x.reason) ? t('fix_login') : t('fix_listener') };
+      else if (x.status === 405) r = { text: t('r405'), fix: t('fix405') };
+      else if (x.status >= 500) r = { text: t('r500', x.status, x.reason), fix: t('fix500') };
+      else if (!x.controller) r = { text: t('rnoctl', x.status, x.reason), fix: t('fixnoctl') };
+      else r = { text: t('ranswered', x.status, x.reason), fix: '' };
+      seen.set(r.text, r);
+    }
+    return [...seen.values()];
+  }
+
+  function refresh(rec) {
+    if (!rec) return;
+    const [status] = coverage(rec);
+    rec.status = status;
+    rec.tile.classList.toggle('cov-ok', status === 'ok');
+    rec.tile.classList.toggle('cov-partial', status === 'partial');
+    rec.tile.classList.toggle('cov-none', status === 'none');
+    applyFilter(rec);
+    if (state.selected === rec.name) renderDrawer(rec);
+    scheduleCounts();
+  }
+
+  let countsTimer = null;
+  function scheduleCounts() { if (!countsTimer) countsTimer = setTimeout(() => { countsTimer = null; counts(); }, 120); }
+  function counts() {
+    const recs = [...state.routes.values()].filter((r) => !r.internal);
+    const n = { ok: 0, partial: 0, none: 0, pending: 0, leak: 0 };
+    for (const r of recs) { n[r.status || 'pending']++; if (r.findings.some((f) => f.certain && !f.known)) n.leak++; }
+    $('c-all').textContent = recs.length;
+    $('c-ok').textContent = n.ok; $('c-partial').textContent = n.partial; $('c-none').textContent = n.none; $('c-leak').textContent = n.leak;
+    const total = Math.max(1, recs.length);
+    $('g-ok').style.width = `${(n.ok / total) * 100}%`;
+    $('g-partial').style.width = `${(n.partial / total) * 100}%`;
+    $('g-none').style.width = `${(n.none / total) * 100}%`;
+    state.coverage = recs.length ? Math.round(((n.ok + n.partial * .5) / total) * 100) : null;
+    $('cov-pct').textContent = null === state.coverage ? '–' : t('covered', state.coverage);
+  }
+
+  function applyFilter(rec) {
+    const f = state.filter;
+    const show = f === 'all' || (f === 'leak' ? rec.findings.some((x) => x.certain && !x.known) : rec.status === f);
+    rec.tile.classList.toggle('hidden', !show);
+  }
+  function applyFilters() {
+    for (const rec of state.routes.values()) applyFilter(rec);
+    for (const organ of state.organs.values()) organ.el.classList.toggle('hidden', !organ.tiles.querySelector('.tile:not(.hidden)'));
+  }
+
+  // ---- route detail --------------------------------------------------------------------------
+  function template(uri) {
+    return esc(uri).replace(/\{marker\}/g, '<span class="ph">{marker}</span>').replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, '<span class="ph">{$1}</span>');
+  }
+  function openDrawer(name) {
+    const rec = state.routes.get(name);
+    if (!rec) return;
+    document.querySelectorAll('.tile.selected').forEach((t) => t.classList.remove('selected'));
+    rec.tile.classList.add('selected');
+    state.selected = name;
+    renderDrawer(rec);
+    $('drawer').classList.add('open');
+  }
+  function closeDrawer() {
+    $('drawer').classList.remove('open');
+    document.querySelectorAll('.tile.selected').forEach((t) => t.classList.remove('selected'));
+    state.selected = null;
+  }
+  function renderDrawer(rec) {
+    const [status, why] = coverage(rec);
+    $('d-name').textContent = rec.name;
+    $('d-path').textContent = `${rec.methods.join(' ') || 'ANY'}  ${rec.path}`;
+    const pill = $('d-status');
+    pill.className = `pill ${status}`;
+    pill.textContent = t(`status_${status}`);
+    const controllers = [...new Set(rec.sendings.map((x) => x.controller).filter(Boolean))];
+    let html = `<h3>${t('h_route')}</h3><div class="kv"><span>${t('controller')}</span><span>${esc(controllers[0] || rec.controller || '—')}</span><span>${t('reached')}</span><span>${t('reached_n', rec.sendings.filter((x) => !x.tour && x.controller).length, rec.sendings.filter((x) => !x.tour).length)}</span><span>${t('pages_seen')}</span><span>${rec.pages.length}</span></div>`;
+    if (why.length) {
+      html += `<h3>${t('why', status)}</h3><div class="why ${status}"><ul>${why.map((r) => `<li>${esc(r.text)}${r.fix ? `<div class="fix">→ ${esc(r.fix)}</div>` : ''}</li>`).join('')}</ul></div>`;
+    }
+    if (rec.probes.size) {
+      html += `<h3>${t('how_built')}</h3>`;
+      for (const [probe, p] of rec.probes) {
+        html += `<div class="tmpl">${esc(p.method)} ${template(p.uri)}${p.body ? `<br><span style="color:var(--muted)">${t('body')}</span> ${template(decodeURIComponent(p.body.replace(/\+/g, ' ')))}` : ''}${p.form_page ? `<br><span style="color:var(--muted)">${t('csrf_from')}</span> ${esc(p.form_page)}` : ''}</div>`;
+      }
+    }
+    const sendings = rec.sendings.filter((x) => !x.tour);
+    if (sendings.length) {
+      html += `<h3>${t('sendings')}</h3><table class="sendings">${sendings.map((x) => `<tr><td class="u">${userBadge(x.user)} ${x.n}</td><td><span class="uri">${esc(x.method)} ${highlight(x.uri)}</span>${x.reason ? `<span class="r">${esc(x.reason)}</span>` : ''}</td><td class="s${String(x.status)[0]}">${x.status}</td><td class="${x.controller ? 'ok' : 'no'}">${x.controller ? t('reached') : t('stopped')}</td><td>${x.ms}ms</td></tr>`).join('')}</table>`;
+    }
+    const leaks = rec.findings;
+    if (leaks.length) {
+      html += `<h3>${t('findings_route')}</h3>${leaks.map((f) => `<div class="specimen${f.known ? ' known' : !f.certain ? ' suspect' : f.impact === 'retention' ? ' retention' : ''}" style="margin-bottom:8px"><div class="k"><span>${esc(f.type.replaceAll('_', ' ').toLowerCase())}</span><span>${f.known ? t('known') : !f.certain ? t('suspect') : t(`impact_${f.impact}`)}</span></div><div class="o">${esc(f.owner)}</div><div class="e">${esc(f.evidence)}</div>${f.file ? `<div class="w"><span class="loc">${esc(f.file)}:${f.line}</span></div>` : ''}</div>`).join('')}`;
+    }
+    if (rec.unblock) {
+      html += `<h3>${t('unblocked')}</h3><div class="unblock">${rec.unblock.steps.map((step) => step).join('')}</div>`;
+    }
+    const running = rec.unblock && !rec.unblock.finished;
+    if (!rec.internal && (status === 'partial' || status === 'none' || running)) {
+      html += `<button class="ai" id="ai-button" ${running ? 'disabled' : ''}>${running ? `<span class="thinking">${t('ai_working')}</span>` : `✦ ${rec.unblock ? t('ai_retry') : t('ai_button')}`}<small>${t('ai_hint')}</small></button>`;
+    }
+    $('d-body').innerHTML = html;
+    $('ai-button')?.addEventListener('click', () => unblock(rec));
+  }
+
+  // ---- diagnosis report ----------------------------------------------------------------------
+  const FIX = (type) => t(`fix_${type}`);
+
+  function groups() {
+    const map = new Map();
+    for (const f of state.report || []) {
+      const known = KNOWN.some((re) => re.test(f.owner) || re.test((f.paths || [])[0] || ''));
+      const key = `${f.type}|${f.owner}|${f.certain}`;
+      const g = map.get(key) || { ...f, known, routes: new Set(), paths: new Set() };
+      g.routes.add((/^(?:form|unblock) (\S+)/.exec(f.probe) || [null, f.probe])[1]);
+      (f.paths || []).forEach((p) => g.paths.size < 3 && g.paths.add(p));
+      g.file ??= f.file; g.line ??= f.line;
+      map.set(key, g);
+    }
+    return [...map.values()];
+  }
+  // The state is owned by the object that holds it directly; the root of the path says which service or static
+  // property keeps that object alive between requests, often the one to fix or to report.
+  function rootOf(path) {
+    const service = /^@(.+?)(?=->|\[|\{|$)/.exec(path);
+    if (service) return t('service', service[1]);
+    const root = /^([\w\\]+::\$\w+|\{process\})/.exec(path);
+    return root ? root[1] : '—';
+  }
+  function leakCard(g) {
+    const where = g.file ? `${esc(g.file)}:${g.line ?? ''}` : (g.source ? esc(g.source) : '—');
+    const kept = g.impact === 'retention';
+    return `<div class="leak${kept ? ' kept' : ''}"><div class="head"><span class="type">${esc(g.type.replaceAll('_', ' ').toLowerCase())}</span><span class="tag ${esc(g.impact || '')}">${esc(g.impact ? t(`impact_${g.impact}`) : (g.certain ? t('certain') : t('suspect')))}</span></div>
+      <div class="owner">${esc(g.owner)}</div><div class="ev" title="${esc(g.evidence)}">${esc(g.evidence.length > 280 ? g.evidence.slice(0, 280) + '…' : g.evidence)}</div>
+      <div class="meta"><span>${t('fix_from')}</span><span>${where}</span><span>${t('reached_from')}</span><span>${esc(rootOf([...g.paths][0] || ''))}</span><span>${t('routes_l')}</span><span>${[...g.routes].map(esc).join(', ')}</span><span>${t('state_l')}</span><span>${[...g.paths].map((p) => esc(p.slice(-110))).join('<br>')}</span></div>
+      ${kept ? `<div class="fix" style="color:var(--amber)">→ ${esc(t('kept_note'))}</div>` : ''}
+      ${g.origin === 'application' && !kept ? `<div class="fix">→ ${esc(FIX(g.type))}</div>` : ''}</div>`;
+  }
+  function openReport() {
+    const all = groups();
+    const severity = (g) => (g.impact === 'retention' ? 1 : 0);
+    const certain = all.filter((g) => g.certain && !g.known).sort((a, b) => severity(a) - severity(b));
+    const mine = certain.filter((g) => g.origin === 'application');
+    const deps = certain.filter((g) => g.origin === 'dependency');
+    const severeCount = (list) => list.filter((g) => g.impact !== 'retention').length;
+    const other = certain.filter((g) => g.origin !== 'application' && g.origin !== 'dependency');
+    const suspects = all.filter((g) => !g.certain && !g.known);
+    const known = all.filter((g) => g.known);
+    const recs = [...state.routes.values()].filter((r) => !r.internal);
+    const n = (s) => recs.filter((r) => r.status === s).length;
+    $('r-sub').textContent = $('app').textContent;
+
+    let html = `<div class="cards">
+      <div class="card teal"><b>${null === state.coverage ? '–' : state.coverage + '%'}</b><span>${t('card_cov', n('ok'), n('partial'), n('none'))}</span></div>
+      <div class="card red"><b>${severeCount(mine)}</b><span>${t('card_mine')}</span></div>
+      <div class="card red"><b>${severeCount(deps)}</b><span>${t('card_deps')}</span></div>
+      <div class="card amber"><b>${certain.filter((g) => g.impact === 'retention').length}</b><span>${t('card_kept')}</span></div>
+      <div class="card"><b>${suspects.length}</b><span>${t('card_suspects')}</span></div>
+      <div class="card"><b>${known.length}</b><span>${t('card_known')}</span></div>
+    </div>`;
+
+    html += `<h2>${t('h_app')} <small>${mine.length ? t('h_app_note') : ''}</small></h2>`;
+    html += mine.length ? mine.map(leakCard).join('') : `<div class="none-found">${t('none_app')}</div>`;
+
+    html += `<h2>${t('h_deps')} <small>${deps.length ? t('h_deps_note') : ''}</small></h2>`;
+    if (!deps.length) html += `<div class="none-found">${t('none_deps')}</div>`;
+    const byPackage = new Map();
+    for (const g of deps) { const k = g.package || 'unknown'; (byPackage.get(k) || byPackage.set(k, []).get(k)).push(g); }
+    let i = 0;
+    for (const [pkg, leaks] of byPackage) {
+      html += `<div class="pkg"><div class="ph"><span><b>${esc(pkg)}</b> <em>${esc(leaks[0].version || '?')}</em></span></div>`;
+      for (const g of leaks) {
+        const id = `up-${i++}`;
+        html += leakCard(g) + `<button class="up" data-id="${id}" data-package="${esc(pkg)}" data-version="${esc(g.version || '')}" data-source="${esc(g.source || '')}" data-class="${esc(g.class || '')}">${t('search_btn')}</button><div id="${id}"></div>`;
+        if (g.holder) {
+          const hid = `up-${i++}`;
+          html += `<button class="up" data-id="${hid}" data-package="${esc(g.holder.package)}" data-version="${esc(g.holder.version || '')}" data-source="${esc(g.holder.source)}" data-class="${esc(g.holder.class)}">${t('search_holder', esc(g.holder.class.split('\\').pop()), esc(g.holder.property))}</button><div id="${hid}"></div>`;
+        }
+      }
+      html += '</div>';
+    }
+    if (other.length) html += `<h2>${t('h_else')} <small>${t('h_else_note')}</small></h2>${other.map(leakCard).join('')}`;
+    if (suspects.length) html += `<h2>${t('h_suspects')} <small>${t('h_suspects_note')}</small></h2><div class="compact">${suspects.map((g) => `<div><b>${esc(g.owner)}</b> · ${esc(g.evidence.slice(0, 160))}${g.file ? ` · ${esc(g.file)}:${g.line}` : ''}</div>`).join('')}</div>`;
+    if (known.length) html += `<h2>${t('h_known')} <small>${t('h_known_note')}</small></h2><div class="compact">${known.map((g) => `<div><b>${esc(g.owner)}</b> · ${esc(g.evidence.slice(0, 120))}</div>`).join('')}</div>`;
+
+    $('r-body').innerHTML = html;
+    $('report').classList.add('open');
+  }
+  function verdict(r) {
+    const file = r.file;
+    if (!r.repository) return t('v_norepo');
+    if (!file || !file.found) return t('v_nofile');
+    if (r.installed === r.latest) return file.head?.changed ? t('v_latest_head') : t('v_latest_same');
+    if (file.latest?.changed) return t('v_changed', r.latest);
+    if (file.head?.changed) return t('v_head', r.latest);
+    return t('v_none', r.latest);
+  }
+  async function searchUpstream(button) {
+    const box = $(button.dataset.id);
+    button.disabled = true;
+    button.textContent = t('searching');
+    try {
+      const q = new URLSearchParams({ package: button.dataset.package, version: button.dataset.version, source: button.dataset.source, class: button.dataset.class });
+      const r = await fetch(`/upstream?${q}`, { headers: { 'X-Igor-Dashboard': '1' } }).then((x) => x.json());
+      const file = r.file;
+      const diff = (c, label) => c ? `<div class="row">${label}: <b>${c.changed ? t('changed', c.added, c.removed) : t('unchanged')}</b>${c.signals?.length ? ` · ${t('adds')} ${c.signals.map(esc).join(', ')}` : ''}</div>` : '';
+      box.innerHTML = `<div class="upres"><div class="verdict">${esc(r.error || verdict(r))}</div>
+        <div class="row">${t('installed')} <b>${esc(r.installed || '?')}</b> · ${t('latest_release')} <b>${esc(r.latest || '?')}</b>${r.repository ? ` · <a href="${esc(r.repository)}" target="_blank" rel="noopener">${t('repository')}</a>` : ''}</div>
+        ${file ? diff(file.latest, t('file_in', esc(file.path), esc(r.latest || ''))) + diff(file.head, t('dev_branch')) + `<div class="row"><a href="${esc(file.url)}" target="_blank" rel="noopener">${t('read_file')}</a>${file.compare ? ` · <a href="${esc(file.compare)}" target="_blank" rel="noopener">${t('compare', esc(r.installed), esc(r.latest))}</a>` : ''}</div>` : ''}
+        ${r.issues?.length ? `<div class="row" style="margin-top:8px">${t('issues_intro')}</div><ul>${r.issues.map((x) => `<li><span class="tag ${x.state}">${x.pull ? 'PR' : 'issue'} ${x.state}</span><a href="${esc(x.url)}" target="_blank" rel="noopener">#${x.number} ${esc(x.title)}</a> <span class="compact">${esc(x.updated)}</span></li>`).join('')}</ul>` : `<div class="row">${t('no_issues')}</div>`}
+        ${r.issues_search ? `<div class="row"><a href="${esc(r.issues_search)}" target="_blank" rel="noopener">${t('search_issues')}</a></div>` : ''}</div>`;
+      button.textContent = t('searched');
+    } catch (err) {
+      box.innerHTML = `<div class="upres">${esc(t('search_failed', err.message))}</div>`;
+      button.disabled = false;
+      button.textContent = t('search_btn');
+    }
+  }
+  $('report-btn').addEventListener('click', openReport);
+  $('r-close').addEventListener('click', () => $('report').classList.remove('open'));
+  $('report').addEventListener('click', (ev) => {
+    const up = ev.target.closest('.up');
+    if (up) searchUpstream(up);
+    else if (ev.target === $('report')) $('report').classList.remove('open');
+  });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') $('report').classList.remove('open'); });
+
+  async function unblock(rec) {
+    rec.unblock = { steps: [`<div class="step"><b>${t('asking')}</b><div class="ans thinking">${t('to_model')}</div></div>`], finished: false, ok: false };
+    renderDrawer(rec);
+    try {
+      const res = await fetch(`/unblock?route=${encodeURIComponent(rec.name)}`, { method: 'POST', headers: { 'X-Igor-Dashboard': '1' } });
+      if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+      if (state.speed !== 0) setSpeed(0, false);
+    } catch (err) {
+      rec.unblock = { steps: [`<div class="step ko"><b>${t('could_not_start')}</b><div class="ans">${esc(err.message)}</div></div>`], finished: true, ok: false };
+      renderDrawer(rec);
+    }
+  }
+  $('d-close').addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeDrawer(); });
+  $('coverage').addEventListener('click', (ev) => {
+    const chip = ev.target.closest('.chip');
+    if (!chip) return;
+    state.filter = chip.dataset.filter;
+    document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === chip));
+    applyFilters();
+  });
+
+  function tileOf(probe) {
+    if (!probe || probe === 'tour' || probe.startsWith('tour of ')) return null;
+    const form = /^form (\S+) \((GET|POST)\)$/.exec(probe);
+    const unblocked = /^unblock (\S+)$/.exec(probe);
+    const name = form ? form[1] : unblocked ? unblocked[1] : probe;
+    if (!state.tiles.has(name)) addRoute({ name, path: name, methods: form ? [form[2]] : ['GET'] });
+    return state.tiles.get(name);
+  }
+
+  // ---- Igor Doctor ---------------------------------------------------------------------------
+  const doctor = $('doctor');
+  let slashTimer = null;
+  function moveDoctor(tile, words) {
+    if (!tile) return;
+    const table = $('table');
+    const box = tile.getBoundingClientRect(), b = table.getBoundingClientRect();
+    const x = box.left - b.left + table.scrollLeft + box.width / 2 - 51;
+    const y = box.top - b.top + table.scrollTop + box.height / 2 - 51;
+    doctor.style.transform = `translate(${Math.max(0, x)}px, ${Math.max(0, y)}px)`;
+    const method = tile.querySelector('.m');
+    const path = tile.querySelector('.p')?.textContent || '';
+    const short = path.split('/').filter((part) => part && !/^\{_?locale\}$/.test(part)).slice(-2).join('/') || '/';
+    $('zoom').innerHTML = `<span class="zm${method?.classList.contains('post') ? ' post' : ''}">${esc(method?.textContent || '')}</span><span class="zp" style="font-size:${short.length > 16 ? 10 : short.length > 10 ? 11.5 : 14}px">/${esc(short)}</span>`;
+    const tone = words === 'leak!' || words === 'exit()!' || words === t('say_grows') ? 'alarm' : words === t('say_kept') ? 'warn' : null;
+    if (tone) {
+      doctor.classList.remove('alarm', 'warn');
+      doctor.classList.add(tone);
+      clearTimeout(moveDoctor.toneTimer);
+      moveDoctor.toneTimer = setTimeout(() => doctor.classList.remove('alarm', 'warn'), 1400);
+    }
+    if (tile.offsetTop < table.scrollTop + 40 || tile.offsetTop > table.scrollTop + table.clientHeight - 40) {
+      table.scrollTo({ top: tile.offsetTop - table.clientHeight / 2, behavior: 'smooth' });
+    }
+    doctor.classList.add('slash');
+    clearTimeout(slashTimer);
+    slashTimer = setTimeout(() => doctor.classList.remove('slash'), 140);
+    if (words) {
+      $('say').textContent = words;
+      doctor.classList.add('speak');
+      setTimeout(() => doctor.classList.remove('speak'), 900);
+    }
+  }
+
+  function incise(tile, leak) {
+    tile.classList.remove('cut');
+    void tile.offsetWidth;
+    tile.classList.add('cut');
+    if (leak) {
+      const table = $('table');
+      const t = tile.getBoundingClientRect(), b = table.getBoundingClientRect();
+      for (let i = 0; i < 5; i++) {
+        const c = document.createElement('span');
+        c.className = 'crumbs';
+        c.textContent = ['{', '}', '$', '→', ';'][i];
+        c.style.left = `${t.left - b.left + table.scrollLeft + t.width / 2}px`;
+        c.style.top = `${t.top - b.top + table.scrollTop}px`;
+        c.style.setProperty('--dx', `${(Math.random() - .5) * 90}px`);
+        c.style.setProperty('--dy', `${-20 - Math.random() * 50}px`);
+        c.style.setProperty('--r', `${(Math.random() - .5) * 360}deg`);
+        table.appendChild(c);
+        setTimeout(() => c.remove(), 1300);
+      }
+    }
+  }
+
+  // ---- monitor -------------------------------------------------------------------------------
+  const ecg = $('ecg'), spark = $('spark');
+  function fit(canvas) {
+    const r = canvas.getBoundingClientRect(), d = devicePixelRatio || 1;
+    if (canvas.width !== Math.round(r.width * d)) { canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); }
+    return [canvas.getContext('2d'), canvas.width, canvas.height, d];
+  }
+  function drawEcg() {
+    const [g, w, h, d] = fit(ecg);
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(63,208,182,.08)';
+    g.lineWidth = 1;
+    for (let x = 0; x < w; x += 16 * d) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    for (let y = 0; y < h; y += 16 * d) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    const now = performance.now(), span = 9000, base = h * .62;
+    g.lineWidth = 2 * d;
+    g.lineJoin = 'round';
+    g.beginPath();
+    g.moveTo(0, base);
+    let last = 0;
+    for (const beat of state.beats) {
+      const x = w - ((now - beat.at) / span) * w;
+      if (x < -20 * d) continue;
+      const amp = Math.min(h * .55, (12 + Math.log2(1 + beat.ms) * 9) * d);
+      g.lineTo(x - 8 * d, base); g.lineTo(x - 5 * d, base + 5 * d); g.lineTo(x - 2 * d, base - amp); g.lineTo(x + 2 * d, base + amp * .35); g.lineTo(x + 5 * d, base);
+      last = x;
+    }
+    g.lineTo(w, base);
+    g.strokeStyle = '#3fd0b6';
+    g.shadowColor = '#3fd0b6';
+    g.shadowBlur = 8 * d;
+    g.stroke();
+    g.shadowBlur = 0;
+    for (const beat of state.beats) {
+      if (beat.status < 400) continue;
+      const x = w - ((now - beat.at) / span) * w;
+      g.fillStyle = beat.status >= 500 ? '#ff5a6a' : '#ff8a5a';
+      g.beginPath(); g.arc(x - 2 * d, base - 10 * d, 2.5 * d, 0, 7); g.fill();
+    }
+    state.beats = state.beats.filter((b) => now - b.at < span + 500);
+    const recent = state.beats.filter((b) => now - b.at < 3000).length;
+    $('rate').textContent = t('reqs', (recent / 3).toFixed(1));
+    requestAnimationFrame(drawEcg);
+  }
+  function drawSpark() {
+    const [g, w, h, d] = fit(spark);
+    g.clearRect(0, 0, w, h);
+    const pts = state.memory.slice(-200);
+    if (pts.length < 2) return;
+    const min = Math.min(...pts), max = Math.max(...pts), range = Math.max(1, max - min);
+    g.beginPath();
+    pts.forEach((v, i) => { const x = (i / (pts.length - 1)) * w, y = h - 4 * d - ((v - min) / range) * (h - 8 * d); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.strokeStyle = '#f3b54a'; g.lineWidth = 1.5 * d; g.stroke();
+    g.lineTo(w, h); g.lineTo(0, h); g.closePath(); g.fillStyle = 'rgba(243,181,74,.08)'; g.fill();
+  }
+
+  // ---- events --------------------------------------------------------------------------------
+  function userBadge(user) {
+    if (!user) return '<span class="user anon">∅</span>';
+    const i = state.users.indexOf(user);
+    return `<span class="user ${i === 1 ? 'b' : 'a'}">${i === 1 ? 'B' : 'A'}</span>`;
+  }
+  function highlight(uri) {
+    return esc(uri).replace(/igor\d+x[0-9a-f]{10}/g, (m) => `<span class="mark">${m}</span>`);
+  }
+  function logLine(html) {
+    const log = $('log'), el = document.createElement('div');
+    el.innerHTML = html;
+    log.prepend(el);
+    while (log.children.length > 250) log.lastChild.remove();
+  }
+  function bump(id, value) { $(id).textContent = value; }
+  function progress() {
+    bump('progress-text', t('probes_progress', state.probesDone.size, state.probesTotal));
+    $('progress').style.width = state.probesTotal ? `${Math.min(100, (state.probesDone.size / state.probesTotal) * 100)}%` : '0';
+  }
+
+  const handlers = {
+    scan(e) {
+      state.users = e.users || [];
+      state.scan = e;
+      renderApp();
+      phase('anaesthesia');
+    },
+    routes(e) { e.routes.forEach(addRoute); phase('exploring'); },
+    page(e) {
+      const rec = recordOf(e.route);
+      if (rec) { rec.pages.push(e); if (state.selected === rec.name) renderDrawer(rec); }
+      const tile = tileOf(e.route);
+      if (tile) { tile.classList.add('seen'); moveDoctor(tile, e.forms ? t('say_forms', e.forms) : null); }
+      bump('n-pages', ++state.pages);
+      logLine(`<span class="st s${String(e.status)[0]}">${e.status}</span> ${t('explore')} ${highlight(e.uri)} <span class="note">${e.links ? '· ' + t('links', e.links) : ''}${e.forms ? ' · ' + t('forms_n', e.forms) : ''}</span>`);
+    },
+    form(e) { bump('n-forms', ++state.forms); const tile = tileOf(`form ${e.route} (${e.method})`); if (tile) tile.classList.add('seen'); },
+    probes(e) { state.probesTotal = e.probes.length; e.probes.forEach((p) => tileOf(p.name)); progress(); phase('operating'); },
+    probe(e) {
+      const rec = recordOf(e.probe);
+      if (rec) { rec.probes.set(e.probe, e); rec.sendings = rec.sendings.filter((x) => x.probe !== e.probe || x.tour); refresh(rec); }
+      const tile = tileOf(e.probe);
+      if (tile) { tile.querySelector('.dots').innerHTML = ''; }
+    },
+    request(e) {
+      const rec = recordOf(e.probe);
+      if (rec) { rec.sendings.push(e); refresh(rec); }
+      const tile = tileOf(e.probe);
+      bump('n-requests', ++state.requests);
+      if (e.rolled_back) bump('n-rollbacks', ++state.rollbacks);
+      state.beats.push({ at: performance.now(), ms: e.ms, status: e.status });
+      $('ms').textContent = e.ms;
+      if (tile) {
+        document.querySelectorAll('.tile.active').forEach((t) => t !== tile && t.classList.remove('active'));
+        tile.classList.add('probed', 'active');
+        const dot = document.createElement('i');
+        dot.className = `dot s${String(e.status)[0]}`;
+        if (!e.tour) tile.querySelector('.dots').appendChild(dot);
+        moveDoctor(tile, e.n === 1 && !e.tour ? (e.method === 'POST' ? 'post!' : 'snip!') : null);
+        incise(tile, false);
+      }
+      if (!e.tour) state.probesDone.add(e.probe);
+      progress();
+      $('now').innerHTML = `<div class="uri">${esc(e.method)} ${highlight(e.uri)}</div><div class="meta">${userBadge(e.user)} <span>${t('sending', e.n)}</span><span>HTTP ${e.status}</span><span>${e.ms} ms</span>${e.rolled_back ? `<span>${t('rolled_back')}</span>` : ''}${e.tour ? `<span>${t('tour')}</span>` : ''}</div>`;
+      logLine(`<span class="st s${String(e.status)[0]}">${e.status}</span>${userBadge(e.user)} ${esc(e.method)} ${highlight(e.uri)} <span>${e.ms}ms${e.rolled_back ? ' ↺' : ''}</span>`);
+    },
+    snapshot(e) { $('nodes').textContent = e.nodes.toLocaleString(); state.memory.push(e.memory_kb); $('mem').textContent = (e.memory_kb / 1024).toFixed(1); drawSpark(); },
+    finding(e) { specimen(e); },
+    unblock(e) {
+      const rec = state.routes.get(e.route);
+      if (!rec) return;
+      const u = rec.unblock && !rec.unblock.finished ? rec.unblock : (rec.unblock = { steps: [], finished: false, ok: false });
+      if (e.phase === 'start') u.steps = [];
+      if (e.phase === 'thinking') { u.steps = u.steps.filter((x) => !x.includes('thinking')); u.steps.push(`<div class="step"><b>${t('attempt', e.attempt)}</b><div class="ans thinking">${t('reads')}</div></div>`); moveDoctor(rec.tile, 'hmm…'); }
+      if (e.phase === 'recipe') { u.user = e.user ?? null; u.steps = u.steps.filter((x) => !x.includes('thinking')); u.steps.push(`<div class="step"><b>${t('recipe', e.attempt)}</b><div>${esc(e.explanation)}</div><div class="req">${userBadge(e.user)} ${esc(e.request)}</div></div>`); moveDoctor(rec.tile, 'aha!'); }
+      if (e.phase === 'rejected') { u.steps = u.steps.filter((x) => !x.includes('thinking')); u.steps.push(`<div class="step ko"><b>${t('rejected', e.attempt)}</b><div class="ans">${esc(e.reason)}</div></div>`); }
+      if (e.phase === 'result') {
+        const answers = (e.answers || []).map((a) => `${a.user ? userBadge(a.user) : userBadge(null)} ${a.status} ${a.controller ? t('reached') : t('stopped')}${a.reason ? ' · ' + esc(a.reason) : ''}`).join('<br>');
+        u.steps.push(`<div class="step ${e.ok ? 'ok' : 'ko'}"><b>${e.ok ? t('it_works') : t('still_blocked')}</b><div class="ans">${answers}</div></div>`);
+        moveDoctor(rec.tile, e.ok ? 'eureka!' : t('say_nope'));
+      }
+      if (e.phase === 'done') {
+        u.finished = true; u.ok = !!e.ok;
+        u.steps.push(e.ok ? `<div class="step ok"><b>${t('status_ok')}</b><div class="ans">${t('tested_after', e.attempts, esc(e.file))}</div></div>` : `<div class="step ko"><b>${t('gave_up')}</b><div class="ans">${esc(e.error || '')}</div></div>`);
+        if (e.ok) { rec.tile.classList.add('unblocked'); incise(rec.tile, false); }
+      }
+      refresh(rec);
+      if (state.selected === rec.name) renderDrawer(rec);
+    },
+    crash(e) { const rec = recordOf(e.probe); if (rec) { rec.crash = true; refresh(rec); } const tile = tileOf(e.probe); if (tile) { tile.classList.add('crash'); moveDoctor(tile, 'exit()!'); } logLine(`<span class="s5">${esc(t('crashed', e.probe))}</span>`); },
+    error(e) { logLine(`<span class="s4">! ${esc(e.probe)}: ${esc(e.error)}</span>`); },
+    done(e) {
+      state.done = true;
+      phase('closed');
+      document.querySelectorAll('.tile.active').forEach((t) => t.classList.remove('active'));
+      const located = new Map((e.findings || []).map((f) => [`${f.type}|${f.owner}|${f.probe}`, f]));
+      for (const rec of state.routes.values()) {
+        rec.findings = rec.findings.map((f) => ({ ...f, ...(located.get(`${f.type}|${f.owner}|${f.probe}`) || {}), known: f.known, certain: f.certain }));
+        refresh(rec);
+      }
+      counts();
+      applyFilters();
+      document.querySelectorAll('.specimen').forEach((el) => {
+        const f = located.get(el.dataset.key);
+        if (f && f.file) el.querySelector('.w').innerHTML = `<span class="loc">${esc(f.file)}:${f.line}</span> · ${el.querySelector('.w').innerHTML}`;
+      });
+      $('say').textContent = t('say_done');
+      doctor.classList.add('speak');
+      state.report = e.findings || [];
+      $('report-btn').classList.add('on');
+      setTimeout(openReport, state.speed === 0 ? 300 : 1500);
+    },
+  };
+
+  function phase(name) { state.phase = name; $('phase').textContent = t(`phase_${name}`); $('phase').classList.toggle('done', name === 'closed'); }
+  function renderApp() {
+    const e = state.scan;
+    if (e) $('app').innerHTML = t('patient', esc(e.app), state.users.length, e.forms, e.tour);
+  }
+  // Switching the language rewrites the labels, the counters and the open panels; lines already logged
+  // keep the language they were written in.
+  function applyLanguage() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      if (el.id === 'app' && state.scan) return;
+      el.textContent = t(el.dataset.i18n);
+    });
+    document.querySelectorAll('#lang button').forEach((b) => b.classList.toggle('on', b.dataset.lang === lang));
+    renderApp();
+    phase(state.phase || 'waiting');
+    counts();
+    progress();
+    if (state.selected) renderDrawer(state.routes.get(state.selected));
+    if ($('report').classList.contains('open')) openReport();
+  }
+  $('lang').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    lang = b.dataset.lang;
+    try { localStorage.setItem('igor-lang', lang); } catch (e) { /* the choice is kept for this page only */ }
+    applyLanguage();
+  });
+
+
+  // Framework state that is known and harmless, or already fixed upstream: listed, never shown as a leak.
+  const KNOWN = [/DebugHandlersListener/, /Routing\\RequestContext/, /Session\\Storage\\Handler/, /Doctrine\\Deprecations/];
+  function specimen(f) {
+    const key = `${f.type}|${f.owner}`;
+    const known = KNOWN.some((re) => re.test(f.owner) || re.test((f.paths || [])[0] || ''));
+    if (known) f = { ...f, certain: false, known: true };
+    const tile = tileOf(f.probe);
+    const rec = recordOf(f.probe);
+    if (rec) { rec.findings.push(f); refresh(rec); }
+    const severe = f.certain && f.impact !== 'retention';
+    if (severe && tile) { tile.classList.add('leak'); incise(tile, true); moveDoctor(tile, f.impact === 'growth' ? t('say_grows') : 'leak!'); }
+    else if (f.certain && tile) { tile.classList.add('kept'); moveDoctor(tile, t('say_kept')); }
+    if (state.leaks.has(key)) return;
+    state.leaks.add(key);
+    if (severe) bump('n-leaks', ++state.certain);
+    const box = $('specimens');
+    if (!state.specimens++) box.innerHTML = '';
+    const el = document.createElement('div');
+    el.className = `specimen${f.known ? ' known' : !f.certain ? ' suspect' : f.impact === 'retention' ? ' retention' : ''}`;
+    el.dataset.key = `${f.type}|${f.owner}|${f.probe}`;
+    el.innerHTML = `<div class="k"><span>#${state.specimens} ${esc(f.type.replaceAll('_', ' ').toLowerCase())}</span><span>${f.known ? t('known') : !f.certain ? t('suspect') : t(`impact_${f.impact}`)}</span></div>
+      <div class="o">${esc(f.owner)}</div><div class="e">${esc(f.evidence)}</div>
+      <div class="w">${esc(f.probe)} · ${esc((f.paths || [])[0] || '').slice(-90)}</div>`;
+    f.certain ? box.prepend(el) : box.appendChild(el);
+  }
+
+  // ---- playback: the scan goes faster than the eye, so requests are paced ----------------------
+  let lastPaced = 0;
+  let lastTarget = null;
+  function pump() {
+    const now = performance.now();
+    // At 1x the magnifying glass stays on a route long enough to be read: it lingers when it moves to a new
+    // route, then the sendings on that route follow quicker. 4x is four times faster; live follows the scan.
+    let budget = state.speed === 0 ? Infinity : 1;
+    while (state.queue.length && budget > 0) {
+      const e = state.queue[0];
+      const paced = e.t === 'request' || e.t === 'page';
+      const target = paced ? (e.t === 'page' ? e.route : e.probe) : null;
+      const pause = e.t === 'page' ? 550 : target !== lastTarget ? 900 : 260;
+      const gap = state.speed === 0 ? 0 : pause / state.speed;
+      if (paced && now - lastPaced < gap) break;
+      if (paced) lastTarget = target;
+      state.queue.shift();
+      try { handlers[e.t]?.(e); } catch (err) { console.error(err, e); }
+      if (paced) { lastPaced = now; budget--; }
+    }
+    setTimeout(pump, 30);
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(`/events?from=${state.from}`, { cache: 'no-store' });
+      const data = await res.json();
+      state.from = data.next;
+      state.queue.push(...data.events);
+      state.history.push(...data.events);
+    } catch (err) { /* the scan may be over and the server gone */ }
+    setTimeout(poll, state.queue.length > 2000 ? 800 : 250);
+  }
+
+  function setSpeed(speed, remember) {
+    state.speed = speed;
+    document.querySelectorAll('#speed button').forEach((x) => x.classList.toggle('on', Number(x.dataset.speed) === speed));
+    if (remember) {
+      try { localStorage.setItem('igor-speed', String(speed)); } catch (e) { /* kept for this page only */ }
+    }
+  }
+  $('speed').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (b) setSpeed(Number(b.dataset.speed), true);
+  });
+  let savedSpeed = 1;
+  try { savedSpeed = Number(localStorage.getItem('igor-speed') ?? 1); } catch (e) { savedSpeed = 1; }
+  setSpeed([0, 0.5, 1, 4].includes(savedSpeed) ? savedSpeed : 1, false);
+
+  // Replays the whole scan from the events already received, without reloading the page.
+  function replay() {
+    $('report').classList.remove('open');
+    closeDrawer();
+    $('organs').innerHTML = '';
+    $('log').innerHTML = '';
+    $('now').innerHTML = '<span class="empty" data-i18n="nothing_yet"></span>';
+    $('specimens').innerHTML = '<div class="empty" data-i18n="no_leak_yet"></div>';
+    $('app').textContent = '';
+    $('app').dataset.i18n = 'waiting_patient';
+    $('report-btn').classList.remove('on');
+    doctor.classList.remove('speak', 'alarm', 'warn');
+    doctor.style.transform = '';
+    $('zoom').innerHTML = '';
+    for (const id of ['n-routes', 'n-pages', 'n-forms', 'n-requests', 'n-rollbacks', 'n-leaks', 'ms', 'nodes', 'mem']) $(id).textContent = '0';
+    Object.assign(state, {
+      queue: state.history.slice(), tiles: new Map(), organs: new Map(), routes: new Map(), users: [],
+      pages: 0, forms: 0, requests: 0, rollbacks: 0, leaks: new Set(), probesTotal: 0, probesDone: new Set(),
+      specimens: 0, certain: 0, beats: [], memory: [], done: false, report: null, scan: null, phase: null, selected: null, filter: 'all', coverage: null,
+    });
+    document.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c.dataset.filter === 'all'));
+    lastPaced = 0;
+    lastTarget = null;
+    drawSpark();
+    applyLanguage();
+  }
+  $('replay').addEventListener('click', replay);
+
+  applyLanguage();
+  requestAnimationFrame(drawEcg);
+  pump();
+  poll();
+})();
+</script>
+</body>
+</html>

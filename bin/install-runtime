@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Installs the runtime probe (runtime/, the igor:worker-scan command) in a Symfony project, so that
+# igor:doctor --runtime can run it. Usage: bin/install-runtime <target>
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+target="${1:?Usage: bin/install-runtime <target>}"
+target="$(cd "$target" && pwd)"
+
+if [ ! -f "$target/composer.json" ] || [ ! -f "$target/config/bundles.php" ]; then
+    echo "$target is not a Symfony application (composer.json and config/bundles.php are needed)." >&2
+    exit 2
+fi
+
+composer config --working-dir="$target" repositories.igor-runtime "{\"type\":\"path\",\"url\":\"$root/runtime\",\"options\":{\"symlink\":false}}"
+COMPOSER_NO_AUDIT=1 composer require --working-dir="$target" --no-interaction --quiet --no-scripts 'monitaurus/igor-doctor-runtime:@dev'
+
+if ! grep -q 'IgorRuntimeBundle' "$target/config/bundles.php"; then
+    php -r '
+        $file = $argv[1];
+        $code = file_get_contents($file);
+        $line = "    IgorDoctor\\Runtime\\IgorRuntimeBundle::class => [\"all\" => true],\n";
+        $code = preg_replace("/\\];\\s*$/", $line."];\n", $code, 1);
+        file_put_contents($file, $code);
+    ' "$target/config/bundles.php"
+fi
+
+echo "Runtime probe installed in $target: igor:doctor --runtime can run it."
+echo "To unblock untested routes with AI (asked through Symfony AI), export IGOR_AI_COMMAND=$root/bin/ask before the scan."

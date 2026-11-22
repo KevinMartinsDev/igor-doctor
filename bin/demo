@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Runs igor:doctor on a fresh copy of examples/demo-leak in var/demo-leak (gitignored), so the
+# versioned lab and its deliberate leaks never change. The doctor's changes are printed at the end
+# and saved as var/demo-leak.diff. Extra arguments go to the command,
+# for example: bin/demo --max-iterations=1
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source="$root/examples/demo-leak"
+copy="$root/var/demo-leak"
+
+if [ ! -d "$source/vendor" ]; then
+    echo "The demo project has no dependencies yet: run composer install --working-dir=examples/demo-leak" >&2
+    exit 2
+fi
+
+rm -rf "$copy"
+mkdir -p "$copy"
+rsync -a --exclude /var/ --exclude .DS_Store "$source/" "$copy/"
+
+# With --runtime the doctor also runs the copy: it needs the runtime probe installed there.
+for argument in "$@"; do
+    if [ "$argument" = "--runtime" ]; then
+        "$root/bin/install-runtime" "$copy"
+    fi
+done
+
+echo "Fixing a fresh copy in var/demo-leak; examples/demo-leak stays untouched."
+status=0
+php "$root/bin/console" igor:doctor "$copy" "$@" || status=$?
+
+# The patches live in the copy: show them against the lab and keep them as a patch file.
+diff_file="$root/var/demo-leak.diff"
+(cd "$root" && git diff --no-index --no-color --exit-code examples/demo-leak/src var/demo-leak/src > "$diff_file") && changed=0 || changed=$?
+if [ "$changed" -eq 1 ]; then
+    echo
+    echo "Changes made by the doctor (saved in var/demo-leak.diff, patched files in var/demo-leak/src):"
+    (cd "$root" && git --no-pager diff --no-index --stat examples/demo-leak/src var/demo-leak/src) || true
+    if [ -t 1 ]; then
+        (cd "$root" && git --no-pager diff --no-index --color examples/demo-leak/src var/demo-leak/src) || true
+    else
+        cat "$diff_file"
+    fi
+elif [ "$changed" -eq 0 ]; then
+    echo
+    echo "The doctor changed no file."
+    rm -f "$diff_file"
+fi
+
+exit "$status"

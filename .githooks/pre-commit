@@ -1,0 +1,14 @@
+#!/bin/sh
+# Refuses a commit that changes the demo lab: its leaks are deliberate, and the doctor fixes a
+# copy of it (bin/demo). To change the lab on purpose: ALLOW_DEMO_CHANGES=1 git commit ...
+# Activated by composer install (git config core.hooksPath .githooks).
+
+[ "${ALLOW_DEMO_CHANGES:-}" = "1" ] && exit 0
+
+changed=$(git diff --cached --name-only -- examples/demo-leak/src examples/demo-leak/config)
+[ -z "$changed" ] && exit 0
+
+echo "Commit refused: these files of the demo lab are staged:" >&2
+echo "$changed" | sed 's/^/  /' >&2
+echo "Its leaks are deliberate. Unstage them (git restore --staged <file>), or set ALLOW_DEMO_CHANGES=1 to change the lab on purpose." >&2
+exit 1

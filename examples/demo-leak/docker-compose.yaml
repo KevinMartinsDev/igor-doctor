@@ -1,0 +1,31 @@
+services:
+  php-worker:
+    build: .
+    # Loopback only: the lab exposes routes that leak memory or kill the worker on purpose
+    ports:
+      - "127.0.0.1:8080:80"
+      - "127.0.0.1:443:443"
+      - "127.0.0.1:443:443/udp"
+    environment:
+      - SERVER_NAME=:80
+      - FRANKENPHP_CONFIG=worker ./public/index.php 1
+      - IGOR_RUNTIME_MODE=worker
+      - APP_ENV=dev
+      - APP_SECRET=igor_secret
+    volumes:
+      - .:/app
+    tty: true
+
+  php-classic:
+    build: .
+    ports:
+      - "127.0.0.1:8081:80"
+    environment:
+      - SERVER_NAME=:80
+      - FRANKENPHP_CONFIG=
+      - IGOR_RUNTIME_MODE=classic
+      - APP_ENV=dev
+      - APP_SECRET=igor_secret
+    volumes:
+      - .:/app
+    tty: true

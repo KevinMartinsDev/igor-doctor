@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Runs igor:doctor on a fresh copy of the official Symfony demo (https://github.com/symfony/demo)
+# in var/symfony-demo (gitignored). The upstream clone is cached in var/symfony-demo-src.
+# The full diff against upstream (setup and doctor changes) is printed at the end and saved as
+# var/symfony-demo.diff. Set SYMFONY_DEMO_REF to use another tag or branch. Extra arguments go to the command,
+# for example: bin/demo-symfony --max-iterations=1
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ref="${SYMFONY_DEMO_REF:-v3.1.0}"
+cache="$root/var/symfony-demo-src"
+copy="$root/var/symfony-demo"
+
+for tool in git composer rsync php; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "Missing required tool: $tool" >&2
+        exit 2
+    fi
+done
+
+if [ ! -d "$cache/.git" ]; then
+    mkdir -p "$root/var"
+    git clone --quiet --depth 1 --branch "$ref" https://github.com/symfony/demo "$cache"
+fi
+
+rm -rf "$copy"
+mkdir -p "$copy"
+rsync -a --exclude .git --exclude .DS_Store "$cache/" "$copy/"
+
+composer install --no-interaction --no-progress --quiet --working-dir="$copy"
+if ! grep -q '"igor-php/igor-php"' "$copy/composer.json"; then
+    composer require --dev "igor-php/igor-php:^0.11" --no-interaction --no-progress --quiet --working-dir="$copy"
+fi
+if ! grep -q 'IgorPhpBundle' "$copy/config/bundles.php"; then
+    # Igor reads the compiled container through its bundle, which Flex does not register.
+    sed -i.bak '$ d' "$copy/config/bundles.php"
+    printf "    IgorPhp\\\\IgorBundle\\\\IgorPhpBundle::class => ['dev' => true, 'test' => true],\n];\n" >> "$copy/config/bundles.php"
+    rm -f "$copy/config/bundles.php.bak"
+fi
+cp "$root/examples/demo-leak/igor.json" "$copy/igor.json"
+
+echo "Fixing a fresh copy of symfony/demo ($ref) in var/symfony-demo."
+status=0
+# With --runtime the doctor also runs the copy: it needs the runtime probe installed there.
+for argument in "$@"; do
+    if [ "$argument" = "--runtime" ]; then
+        "$root/bin/install-runtime" "$copy"
+    fi
+done
+
+php "$root/bin/console" igor:doctor "$copy" "$@" || status=$?
+
+# Everything that differs from upstream: the setup (Igor, its bundle, igor.json) and the patches.
+diff_file="$root/var/symfony-demo.diff"
+cd "$root/var"
+diff -ruN -x vendor -x var -x .git -x .DS_Store -x reference.php -x '.env.local*' symfony-demo-src symfony-demo \
+    | sed -E -e '/^(diff|---|\+\+\+) /{s#symfony-demo-src/#a/#;s#symfony-demo/#b/#;}' > "$diff_file" || true
+echo
+echo "Full diff against upstream saved in var/symfony-demo.diff:"
+grep '^+++ ' "$diff_file" | cut -f1 | sed 's#^+++ b/#  #' || true
+
+exit "$status"

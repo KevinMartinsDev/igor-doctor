@@ -1,0 +1,2 @@
+- Add a direct assignment of the forgotten property to its initial value inside the existing `reset()`.
+- Do not call another method from `reset()` to clear it: Igor only sees assignments written in `reset()` itself.

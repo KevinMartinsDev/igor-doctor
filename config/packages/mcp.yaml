@@ -1,0 +1,15 @@
+# Igor's MCP server, read by AuditRunner. The binary and the target are only known at run time:
+# AuditRunner exports IGOR_DOCTOR_BIN and IGOR_DOCTOR_TARGET before the first request, and the
+# client is a lazy service, so these variables are resolved after they are set.
+mcp:
+    clients:
+        igor_doctor:
+            client_info:
+                name: 'igor-doctor'
+                version: '0.1.0'
+            request_timeout: 120
+            servers:
+                igor:
+                    transport: stdio
+                    command: ['%env(IGOR_DOCTOR_BIN)%', 'mcp', '--read-only', '%env(IGOR_DOCTOR_TARGET)%']
+                    cwd: '%env(IGOR_DOCTOR_TARGET)%'
