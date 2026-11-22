@@ -2,6 +2,50 @@
 
 **Symfony AI & MCP Hackathon entry.** Long-running PHP workers (FrankenPHP worker mode) keep memory between requests: one visitor's data can end up in the next visitor's response. Igor Doctor finds those leaks, proves them, and fixes them.
 
+**Found in the wild**
+
+- **API Platform** ([GHSA-xmq6-3c6q-fr8m](https://github.com/api-platform/core/security/advisories/GHSA-xmq6-3c6q-fr8m)): a worker-mode leak that is now a published advisory. Igor Doctor's runtime probe reproduces it on the official [api-platform/demo](https://github.com/api-platform/demo/commit/a8edb41d761b73f7afe5014fbf4c22144242ae9c) (API Platform 5.0.6), unauthenticated, in one scan.
+- **Symfony 7.4**: stateful validators that keep the last submitted form and its author between requests, fixed upstream in 8.1 ([symfony/symfony#63945](https://github.com/symfony/symfony/pull/63945)).
+
+### A leak, in a few lines
+
+This is the code behind the advisory, in `api-platform/state` (`SecurityParameterProvider`, installed as `v5.0.5`):
+
+```php
+foreach ($operation->getUriVariables() ?? [] as $key => $uriVariable) {
+    if ($uriVariable->getValue() instanceof ParameterNotFound) {
+        // $uriVariable belongs to metadata cached for the whole life of the worker
+        $uriVariable->setValue($uriVariables[$key] ?? new ParameterNotFound());
+    }
+    $parameters->add($key, $uriVariable->withKey($key));
+}
+```
+
+The first request writes its value into an object every later request shares, so the next requests are checked against it (an authorization bypass, or validation frozen by the first request). The fix published in the advisory clones before writing: `withKey()` returns a copy.
+
+```diff
+         foreach ($operation->getUriVariables() ?? [] as $key => $uriVariable) {
++            $uriVariable = $uriVariable->withKey($key); // a clone: never write into the cached Link
+             if ($uriVariable->getValue() instanceof ParameterNotFound) {
+                 $uriVariable->setValue($uriVariables[$key] ?? new ParameterNotFound());
+             }
+-            $parameters->add($key, $uriVariable->withKey($key));
++            $parameters->add($key, $uriVariable);
+```
+
+**The proof.** On the demo, the probe sends each route three times on one booted kernel and reports what stays in memory (`bin/console igor:worker-scan --include-vendors --forms --tour`):
+
+```
+CROSS_REQUEST_STATE_LEAK · retention · certain
+owner     ApiPlatform\Metadata\QueryParameter
+route     _api_/books{._format}_get_collection (6 collection routes)
+evidence  a value sent by request 1 is still in the shared state after request 1
+path      CachedResourceMetadataCollectionFactory->$localCache[…]->$operationCache[…]
+          ->$parameters[0]->$extraProperties[_api_values]
+```
+
+The probe shows the value kept in memory (a retention). The advisory describes the same cache, and what a later request can do with it.
+
 - **Igor** ([igor-php](https://github.com/igor-php/igor-php)) reads the code, and the doctor reads Igor's findings over **MCP**.
 - **The runtime probe** runs the application: it logs users in, submits the forms, and replays every route on one booted kernel to show the state a request leaves for the next one (an exposure, a value kept in memory, a growing array, a crash).
 - **A Symfony AI agent** writes the fixes, and the probe and Igor check every patch before it is kept. The same agent unblocks the routes the probe could not test: it writes a request recipe, and the probe replays it in a rolled-back transaction.
@@ -60,7 +104,7 @@ Press Enter in the terminal to close the dashboard. The guide to every option is
 
 This was built for the hackathon, on top of [igor-php](https://github.com/igor-php/igor-php), the static linter, which is released.
 
-- **Solid**: the detection. It is deterministic (no model is involved in finding a leak) and covered by tests (175). It found the stateful validators of Symfony 7.4 and an API Platform leak that has since been published as an advisory (GHSA-xmq6-3c6q-fr8m).
+- **Solid**: the detection. It is deterministic (no model is involved in finding a leak) and covered by tests (175). It found the stateful validators of Symfony 7.4, and it reproduces the API Platform advisory (GHSA-xmq6-3c6q-fr8m) on the official demo.
 - **Experimental**: the dashboard and the AI unblock. The model does not always find the recipe in three attempts: on the symfony/demo post form, it succeeds about one time in two with `opus`.
 - **Not done yet**: API routes that need a token, DELETE and PATCH routes without a form, and a value one route leaves for another route (the probe replays the same route).
 - **A retention is not an exposure**: a value kept in memory is a memory and privacy concern; it becomes a leak between users only when another request reads it. The report says which one it found.
